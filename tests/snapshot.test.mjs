@@ -8,7 +8,7 @@ import { loadPhysicalArchitectureRules } from '../server/physical-architecture-m
 import { signalSemanticPresentation } from '../src/lib/signal-presentation.ts'
 
 const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const storedSnapshot = JSON.parse(await fs.readFile(path.join(appRoot, 'data', 'architecture-snapshot.json'), 'utf8'))
+const storedSnapshot = JSON.parse(await fs.readFile(path.join(appRoot, 'public', 'data', 'architecture-snapshot.json'), 'utf8'))
 const snapshot = attachArchitectureModel(
   storedSnapshot,
   await loadArchitectureRules(path.join(appRoot, 'data', 'architecture-rules.json')),

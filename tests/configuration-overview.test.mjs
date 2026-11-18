@@ -3,7 +3,8 @@ import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 
 const appRoot = new URL('../', import.meta.url)
-const model = JSON.parse(await readFile(new URL('data/configuration-overview.json', appRoot), 'utf8'))
+const publicSnapshot = JSON.parse(await readFile(new URL('public/data/architecture-snapshot.json', appRoot), 'utf8'))
+const model = publicSnapshot.configurationOverview
 
 test('configuration model derives current FU totals from RTL package constants', () => {
   const summary = Object.fromEntries(model.summary.map((item) => [item.id, item]))
