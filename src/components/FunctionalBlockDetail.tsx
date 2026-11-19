@@ -57,8 +57,12 @@ export default function FunctionalBlockDetail({ block, nodes, drillInterfaces, p
   const current = nodeMap.get(currentNodeId)
   const presentation = useMemo(() => {
     const baseChildren = current?.childIds.map((id) => nodeMap.get(id)).filter(Boolean) as ArchitectureDrillNode[] ?? []
+    const directChildIds = new Set(baseChildren.map((item) => item.id))
     const baseInterfaces = drillInterfaces.filter((item) => item.scopeNodeId === currentNodeId)
-    if (!current || current.parentId || block.kind !== 'mem') return { children: baseChildren, interfaces: baseInterfaces }
+    const stageInterfaces = !current?.parentId && ['mxm', 'sxm', 'vxm'].includes(block.kind)
+      ? baseInterfaces.filter((item) => directChildIds.has(item.sourceNodeId) && directChildIds.has(item.destinationNodeId))
+      : baseInterfaces
+    if (!current || current.parentId || block.kind !== 'mem') return { children: baseChildren, interfaces: stageInterfaces }
     const macro = baseChildren.find((item) => item.nodeType === 'macro-decode')
     if (!macro) return { children: baseChildren, interfaces: baseInterfaces }
     const macroChildren = macro.childIds.map((id) => nodeMap.get(id)).filter(Boolean) as ArchitectureDrillNode[]

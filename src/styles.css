@@ -1584,13 +1584,13 @@ code { font-family: var(--mono); }
 .engineering-graph .physical-program-stage:hover,
 .engineering-graph .physical-program-stage.selected { border-color: var(--engineering-selected); box-shadow: 0 0 0 3px rgba(181,104,24,.14); }
 .engineering-graph .physical-program-stage.raw-highlighted { box-shadow: 0 0 0 4px rgba(181,104,24,.2); }
-.engineering-graph .physical-program-relay-fabric { display: grid; grid-template-rows: auto 1fr 1fr auto; gap: 7px; padding: 10px 12px; border-style: solid; background: #fffaf0; }
+.engineering-graph .physical-program-relay-fabric { display: grid; grid-template-rows: auto 1fr 1fr auto; gap: 9px; padding: 14px 18px; border-style: solid; background: #fffaf0; }
 .engineering-graph .physical-program-relay-fabric > header { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .engineering-graph .physical-program-relay-fabric > header strong { font: 900 15px var(--sans); }
 .engineering-graph .physical-program-relay-fabric > header span { color: #87551c; font: 800 10px var(--sans); }
-.physical-program-relay-row { display: grid; grid-template-columns: 66px 1fr; align-items: stretch; gap: 6px; }
+.physical-program-relay-row { display: grid; grid-template-columns: 84px 1fr; align-items: stretch; gap: 10px; }
 .physical-program-relay-row > b { display: grid; place-items: center; border: 2px solid #172b57; background: #e7effb; font: 900 11px var(--sans); }
-.physical-program-relay-row > span { display: grid; grid-template-columns: repeat(7, minmax(0,1fr)); gap: 4px; }
+.physical-program-relay-row > span { display: grid; place-items: center; border: 2px solid #172b57; background: #fff0c9; color: #172b57; font: 900 15px/1 var(--mono); letter-spacing: .06em; }
 .physical-program-relay-row i { min-width: 0; display: grid; grid-template-rows: auto auto; place-items: center; gap: 2px; padding: 5px 6px; border: 2px solid #172b57; background: #fff0c9; font-style: normal; }
 .physical-program-relay-row i:last-child { background: #ffe8b0; }
 .physical-program-relay-row i strong { font: 900 12px var(--sans); }

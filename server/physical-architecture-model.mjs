@@ -366,16 +366,16 @@ export function buildPhysicalArchitectureModel(snapshot, architecture, suppliedR
   if (programLoadBlock?.structure) {
     programLoadBlock.displayName = 'Program Load System + Program Distribution System'
     programLoadBlock.shortName = 'LOAD + DISTRIBUTE'
-    programLoadBlock.function = 'lpu_top directly owns three sibling systems. lpu_program_load_system performs command sequencing, DMA response reassembly and the load_distribute_* handoff; lpu_program_distribute_system owns destination decode, the East/West route split, two integrated seven-stage Relay chains and FU-local Program routing; lpu_fu_subsystem_cluster owns only QCTL, Schedule Cycle and the FU-local Frontend/Subsystem execution domains.'
+    programLoadBlock.function = 'Main RTL chain: Instruction DMA → response buffer → Assembler/Reassembler → Program Word FIFO → Distributor Elastic Stage → West/East Relay chains → FU frontend/local iMEM. The central VXM route branches directly from the Distributor elastic head and bypasses both Relay chains.'
     programLoadBlock.instanceCountExpression = 'top siblings: u_program_load_system + u_program_distribute_system + u_fu_subsystems; East R0–R6 + West R0–R6 = 14 integrated two-entry Relay stages'
     programLoadBlock.placementStatus = 'rtl-confirmed'
     programLoadBlock.placementBasis = 'lpu_top directly instantiates Program Load, Program Distribution and the FU Cluster as three siblings. Program Distribution is not nested in the Cluster. Its two generated seven-stage Relay chains connect through top-level Program buses to fourteen MEM Local Program Ports without a Hemisphere 7-to-1 round-robin.'
     programLoadBlock.rtlMappings = [
       mapping(programControl, 'u_program_load_controller', 1, 'Program command and lifecycle owner.'),
       mapping(programLoader, 'u_program_load_controller', 1, 'Command descriptor storage and sequencing.'),
-      mapping(programLoadSubsystem, 'u_program_load_system', 1, 'Instruction DMA response processing, reassembly, Program Word FIFO and distributor handoff.'),
+      mapping(programLoadSubsystem, 'u_program_load_system', 1, 'Owns controller + load path: Instruction DMA, buffered response, Reassembler/Assembler and Program Word FIFO.'),
       mapping(programDistributionIngress, 'u_program_load_system', 1, 'WRITE/PRIME selection and East/West/BOTH distribution ingress.'),
-      mapping(programDistributionNetwork, 'u_program_distribute_system', 1, 'Top-level Program Distribution sibling: endpoint routing, Relay fabric and FU-local Program buses.'),
+      mapping(programDistributionNetwork, 'u_program_distribute_system', 1, 'Top-level Distribution sibling: input Elastic Stage, direct VXM route, two Relay chains and FU-local Program buses.'),
       mapping(programRelayChain, 'gen_program_relay_chain[0:1].u_program_relay_chain', 2, 'Two RTL-instantiated Hemisphere chains; each chain generates seven two-entry lpu_program_distribute_relay stages.'),
       mapping(cluster, 'u_fu_subsystems', 1, 'Top-level FU Cluster sibling: QCTL, Schedule Cycle and FU-local Frontend/Subsystem ownership only.'),
     ]
@@ -395,8 +395,8 @@ export function buildPhysicalArchitectureModel(snapshot, architecture, suppliedR
       if (fact.label === 'Image context entries') fact.source = { file: 'rtl/program_load/lpu_program_load_config_fifo.sv', line: 1 }
       if (fact.label === 'Word FIFO depth') fact.source = { file: 'rtl/program_load/lpu_program_load_word_fifo.sv', line: 1 }
     }
-    programLoadBlock.structure.controlPath = ['Program command + DMA response', 'Reassembly + Program Word FIFO', 'WRITE / PRIME + East/West/BOTH distribution', 'East R0–R6 / West R0–R6 · two-entry each', '14 independent MEM Local Program Ports', 'Fixed Relay-to-Bank ownership', 'FU-local frontend write + Commit return']
-    programLoadBlock.structure.namingNote = 'The command descriptor store is an RTL register array, not instruction-payload SRAM. Program Load, Program Distribution and FU Cluster are direct lpu_top siblings. No Hemisphere 7-to-1 round-robin remains. Each Relay stage owns one independent MEM Local Program Port and a fixed Bank range: R0–R5 cover sixteen Banks each and R6 covers eight. The integrated 2×7 Relay fabric was exercised by the current system regressions. SXM/VXM formal loading and MXM bit48 semantics remain open.'
+    programLoadBlock.structure.controlPath = ['Instruction DMA', 'Buffered DMA response', 'Assembler / Reassembler', 'Program Word FIFO', 'Distributor Elastic Stage', 'West/East R0–R6 Relay chains', 'FU frontend / local iMEM', 'Per-FU decode and data path']
+    programLoadBlock.structure.namingNote = 'The command descriptor store is an RTL register array, not instruction-payload SRAM. Program Load, Program Distribution and FU Cluster are direct lpu_top siblings. VXM branches directly from the Distributor elastic head and bypasses Relay. MEM and MXM local frontends are integrated; SXM and VXM expose real subsystem boundaries but their local load adapters remain unintegrated. No same-named decoder module is invented for those two endpoints.'
   }
 
   blocks.push(block({

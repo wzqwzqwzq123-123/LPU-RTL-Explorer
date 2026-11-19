@@ -165,23 +165,24 @@ test('grouped Program Load view exposes the real FIFO, handoff mux and elastic-s
   const byId = new Map(drill.nodes.map((node) => [node.id, node]))
   const root = byId.get('arch:control:program-load')
   assert.equal(root?.layout, 'program-load-overview')
-  assert.equal(root?.childIds.length, 19)
-  assert.deepEqual([...new Set(root?.childIds.map((id) => byId.get(id)?.architectureContainer))].sort(), ['command', 'controller-lifecycle', 'distributor', 'frontend', 'handoff', 'reassembly'])
+  assert.deepEqual(root?.childIds, [
+    'arch:control:program-load:instruction-dma',
+    'arch:control:program-load:response',
+    'arch:control:program-load:assembler',
+    'arch:control:program-load:word-fifo',
+    'arch:control:program-load:elastic',
+    'arch:control:program-load:relay-fabric',
+    'arch:control:program-load:fu-entry',
+  ])
+  assert.deepEqual([...new Set(root?.childIds.map((id) => byId.get(id)?.architectureContainer))].sort(), ['distribution-main', 'load-main'])
   assert.equal(byId.get('arch:control:program-load:word-fifo')?.handoffStage, 'reassembly-output')
-  assert.equal(byId.get('arch:control:program-load:handoff-mux')?.handoffStage, 'word-fifo-to-distributor')
   assert.equal(byId.get('arch:control:program-load:elastic')?.handoffStage, 'distributor-input')
   assert.equal(byId.get('arch:control:program-load:relay-fabric')?.nodeType, 'program-relay-fabric')
   assert.equal(byId.get('arch:control:program-load:relay-fabric')?.confidenceStatus, 'rtl-confirmed')
-  assert.equal(byId.get('arch:control:program-load:program-reset')?.confidenceStatus, 'rtl-confirmed')
   const interfaces = drill.interfaces.filter((item) => item.scopeNodeId === root.id)
-  assert.ok(interfaces.some((item) => item.name === 'Word FIFO Dequeue + Route Metadata' && item.sourceNodeId.endsWith(':word-fifo') && item.destinationNodeId.endsWith(':handoff-mux')))
-  assert.ok(interfaces.some((item) => item.name === 'Distributor Input Handshake' && item.sourceNodeId.endsWith(':handoff-mux') && item.destinationNodeId.endsWith(':elastic')))
-  for (const name of ['DMA Response', 'Program Word', 'West Record', 'East Record', '14 Independent MEM Local Program Ports', 'SXM / VXM Program Boundary', 'Commit', 'START', 'Fault']) assert.ok(interfaces.some((item) => item.name === name), `${name} semantic edge must be present`)
-  assert.ok(interfaces.some((item) => item.name === 'West R0–R6 · Seven Independent Local Ports' && item.confidenceStatus === 'rtl-confirmed'))
-  assert.ok(interfaces.some((item) => item.name === 'East R0–R6 · Seven Independent Local Ports' && item.confidenceStatus === 'rtl-confirmed'))
-  assert.ok(interfaces.some((item) => item.name === 'Program Reset / Transport Flush' && item.confidenceStatus === 'rtl-confirmed'))
-  assert.match(root?.displayName ?? '', /Program Load System.*Program Distribution System/)
-  assert.match(byId.get('arch:control:program-load:relay-fabric')?.displayName ?? '', /West W0–W6.*East E0–E6/)
+  for (const name of ['DMA → 响应缓冲', '缓冲 → Assembler', 'Assembler → Word FIFO', 'Word FIFO → Elastic Stage', 'Elastic Stage → Relay Chain', 'Relay Chain → FU Frontends / local iMEM', 'VXM Direct · Elastic / Distributor → Frontend Boundary']) assert.ok(interfaces.some((item) => item.name === name), `${name} main-chain edge must be present`)
+  assert.match(root?.displayName ?? '', /Program Load.*Program Distribution.*FU-local Frontends/)
+  assert.match(byId.get('arch:control:program-load:relay-fabric')?.displayName ?? '', /Relay Chain · West \+ East/)
   assert.ok(drill.nodes.every((node) => !/East Load Router|West Load Router|East Router|West Router/i.test(node.displayName)))
   const obsolete = new Set(['lpu_program_control_system', 'lpu_program_loader', 'lpu_program_load_subsystem'])
   assert.ok(drill.nodes.every((node) => node.rtlModuleRefs.every((name) => !obsolete.has(name))))
@@ -320,7 +321,7 @@ test('MEM functional decode path selects lpu_mem_macro_decoder and keeps tile de
   const macro = drill.nodes.find((node) => node.id === 'arch:west:mem:macro')
   const macroDecoder = drill.nodes.find((node) => node.id === 'arch:west:mem:macro:decoder')
   assert.deepEqual(root?.childIds.map((id) => drill.nodes.find((node) => node.id === id)?.displayName), [
-    'Bank-local Frontend Path · 104', 'MEM64 → Native32 Adapter', 'Native MEM Execution Array',
+    'MEM Frontend / Local iMEM · 104', 'MEM Instruction Decode / Control', 'MEM Data Path · Native Execution Array',
     'East / West Stream Interface',
   ])
   assert.ok(macro?.rtlModuleRefs.includes('lpu_mem_macro_decoder'))
@@ -362,7 +363,7 @@ test('MEM instruction queue is the final stage inside the bank-local frontend fe
   const bank = nodes.get('arch:west:mem:execution:column:0:bank:0')
   assert.equal(bank?.layout, 'south-north-bank')
   assert.ok(bank?.childIds.includes('arch:west:mem:execution:column:0:bank:0:control-column'))
-  assert.ok(drill.interfaces.some((item) => item.id === 'arch:west:mem:interface:selector-execution' && /South → North/.test(item.name)))
+  assert.ok(drill.interfaces.some((item) => item.id === 'arch:west:mem:interface:selector-execution' && /Frontend.*Decode/.test(item.name)))
   assert.ok(drill.interfaces.some((item) => item.id.endsWith(':interface:tile-command') && item.name === 'South → North Bank Command'))
 })
 
@@ -503,7 +504,8 @@ test('distributed Program Load terminates at FU-local iMEM and local macro paths
   const programEndpoints = physical.interfaces.filter((entry) => /Local iMEM Load/.test(entry.name))
   assert.deepEqual(programEndpoints.map((entry) => entry.destinationBlockId).sort(), ['physical:east:mem', 'physical:east:mxm', 'physical:west:mem', 'physical:west:mxm'])
   const localNames = physical.drilldown.nodes.map((node) => node.displayName)
-  for (const name of ['MEM Frontend · 104', 'Macro Decode / Scheduler', 'Instruction Queue · 104', 'MEM64 → Native32 Adapter', 'FU-local Issue Select']) assert.ok(localNames.includes(name))
+  for (const name of ['MEM Frontend / Local iMEM · 104', 'MEM Frontend · 104', 'Macro Decode / Scheduler', 'Instruction Queue · 104', 'MEM Instruction Decode / Control', 'FU-local Issue Select']) assert.ok(localNames.includes(name))
+  for (const name of ['MXM Frontend / Local iMEM', 'MXM Macro Decode / Timed Issue', 'MXM Data Path · Matrix Execution', 'SXM Frontend / Local Instruction Entry', 'SXM 指令译码（架构概括）', 'SXM Data Path · Transpose / Permute', 'VXM Frontend / Local Instruction Entry', 'VXM 指令译码（架构概括）', 'VXM Data Path · Vector Execution Array']) assert.ok(localNames.includes(name))
 })
 
 test('MEM Native visualization preserves the current active RTL boundary', () => {

@@ -463,13 +463,12 @@ const PromotedProgramNode = memo(({ data }: NodeProps<Node<PhysicalNodeData>>) =
   const item = data.programNode!
   const category = promotedProgramCategory(item)
   if (item.nodeType === 'program-relay-fabric') {
-    const relayCount = item.parameterRefs.find((parameter) => parameter.name === 'RELAY_COUNT')?.value ?? 7
-    const stages = Array.from({ length: relayCount }, (_, index) => ({ index, banks: index === relayCount - 1 ? 8 : 16 }))
     return <div className={`physical-program-stage physical-program-relay-fabric ${data.selected ? 'selected' : ''}`} data-program-node={item.id} data-evidence-status={item.confidenceStatus} title={`${item.displayName}\n${item.description}\n${item.confidenceStatus}`}>
       <DataHandles />
-      <header><strong>7-STAGE ELASTIC RELAY CHAIN · WEST / EAST</strong><span>2 HEMISPHERES × 7 REGISTERED STAGES</span></header>
-      {(['W', 'E'] as const).map((prefix) => <div className="physical-program-relay-row" key={prefix}><b>{prefix === 'W' ? 'WEST' : 'EAST'}</b><span>{stages.map((stage) => <i key={stage.index}><strong>{prefix}{stage.index}</strong><small>2-entry · {stage.banks} Banks · 1 Local Port</small></i>)}</span></div>)}
-      <footer>14 independent MEM Local Program Ports · fixed Bank ownership · no Hemisphere round-robin</footer>
+      <header><strong>RELAY CHAIN · WEST / EAST</strong><span>2 × 7 REGISTERED STAGES</span></header>
+      <div className="physical-program-relay-row"><b>WEST</b><span>W0 → W1 → W2 → W3 → W4 → W5 → W6</span></div>
+      <div className="physical-program-relay-row"><b>EAST</b><span>E0 → E1 → E2 → E3 → E4 → E5 → E6</span></div>
+      <footer>14 MEM local ports · R6 outer MXM/SXM path · VXM bypasses Relay</footer>
     </div>
   }
   return <div className={`physical-program-stage category-${category} ${data.selected ? 'selected' : ''} ${data.rawHighlighted ? 'raw-highlighted' : ''}`} data-program-node={item.id} data-program-container={item.architectureContainer ?? ''} data-evidence-status={item.confidenceStatus} title={`${item.displayName}\n${item.description}\n${item.confidenceStatus}`}>
@@ -555,35 +554,18 @@ const blockLayout: Record<string, { x: number; y: number; width: number; height:
 }
 
 const programLoadLayerLayout = {
-  controller: { x: 70, y: 70, width: 3450, height: 650, label: 'L1 · PROGRAM LOAD SYSTEM · TOP-LEVEL SIBLING', note: 'u_program_load_system · command sequencing, DMA response reassembly, load_distribute_* handoff and lifecycle control.' },
-  network: { x: 70, y: 770, width: 3450, height: 430, label: 'L2 · PROGRAM DISTRIBUTION SYSTEM · TOP-LEVEL SIBLING', note: 'u_program_distribute_system · destination decode, integrated West/East R0–R6 chains and FU-local Program buses; not nested in the FU Cluster.' },
-} as const
-
-const programLoadControllerSectionLayout = {
-  command: { x: 110, y: 155, width: 680, height: 510, label: 'LOAD SYSTEM · COMMAND', note: 'Descriptor storage, command PC and lifecycle command issue.' },
-  reassembly: { x: 830, y: 155, width: 1360, height: 510, label: 'LOAD SYSTEM · LOAD PATH', note: 'Generic DMA response, ordered buffering, reassembly and Program Word FIFO.' },
-  handoff: { x: 2230, y: 155, width: 560, height: 510, label: 'LOAD SYSTEM · DISTRIBUTOR HANDOFF', note: 'WRITE / PRIME selection and the two-entry Distributor input stage.' },
-  lifecycle: { x: 2830, y: 155, width: 640, height: 510, label: 'LOAD SYSTEM · LIFECYCLE', note: 'START, Commit, Fault and Program Reset remain load-system owned.' },
+  controller: { x: 70, y: 70, width: 3450, height: 650, label: 'L1 · PROGRAM LOAD SYSTEM', note: 'DMA → response buffer → Assembler / Reassembler → Program Word FIFO.' },
+  network: { x: 70, y: 770, width: 3450, height: 430, label: 'L2 · PROGRAM DISTRIBUTION SYSTEM', note: 'Elastic Stage → West/East Relay chains → FU frontend/local iMEM; VXM uses the direct Distributor bypass.' },
 } as const
 
 const programLoadNodeLayout: Record<string, { x: number; y: number; width: number; height: number }> = {
-  'arch:control:program-load:write': { x: 145, y: 260, width: 260, height: 110 },
-  'arch:control:program-load:array': { x: 485, y: 260, width: 260, height: 110 },
-  'arch:control:program-load:sequencer': { x: 145, y: 480, width: 260, height: 110 },
-  'arch:control:program-load:instruction-dma': { x: 485, y: 480, width: 260, height: 110 },
-  'arch:control:program-load:response': { x: 875, y: 250, width: 300, height: 110 },
-  'arch:control:program-load:config-fifo': { x: 1275, y: 250, width: 300, height: 110 },
-  'arch:control:program-load:reservoir': { x: 875, y: 480, width: 300, height: 110 },
-  'arch:control:program-load:word-builder': { x: 1275, y: 480, width: 300, height: 110 },
-  'arch:control:program-load:word-fifo': { x: 1675, y: 480, width: 300, height: 110 },
-  'arch:control:program-load:prime-fifo': { x: 2260, y: 245, width: 500, height: 105 },
-  'arch:control:program-load:handoff-mux': { x: 2260, y: 405, width: 500, height: 105 },
-  'arch:control:program-load:elastic': { x: 2260, y: 565, width: 500, height: 90 },
-  'arch:control:program-load:program-reset': { x: 2890, y: 360, width: 520, height: 130 },
-  'arch:control:program-load:decode': { x: 1510, y: 825, width: 500, height: 105 },
-  'arch:control:program-load:west': { x: 260, y: 1000, width: 340, height: 105 },
-  'arch:control:program-load:east': { x: 2920, y: 1000, width: 340, height: 105 },
-  'arch:control:program-load:relay-fabric': { x: 830, y: 965, width: 1860, height: 205 },
+  'arch:control:program-load:instruction-dma': { x: 220, y: 330, width: 420, height: 125 },
+  'arch:control:program-load:response': { x: 900, y: 330, width: 420, height: 125 },
+  'arch:control:program-load:assembler': { x: 1580, y: 330, width: 480, height: 125 },
+  'arch:control:program-load:word-fifo': { x: 2320, y: 330, width: 420, height: 125 },
+  'arch:control:program-load:elastic': { x: 260, y: 920, width: 430, height: 125 },
+  'arch:control:program-load:relay-fabric': { x: 980, y: 870, width: 1320, height: 220 },
+  'arch:control:program-load:fu-entry': { x: 2660, y: 920, width: 520, height: 125 },
 }
 
 const programRelayFabricId = 'arch:control:program-load:relay-fabric'
@@ -658,16 +640,6 @@ export default function PhysicalArchitectureGraph({ regions, blocks, interfaces,
         selectable: false,
         data: { programGroup: { id: `layer-${id}`, label: group.label, note: group.note, role: 'layer' }, ownerBlock: programBlock, selected: selectedBlockId === programBlockId, rawHighlighted: rawHighlightedBlockIds.has(programBlockId) },
       })
-      for (const [id, group] of Object.entries(programLoadControllerSectionLayout)) nodes.push({
-        id: `${programRootId}:section:${id}`,
-        type: 'programGroup',
-        parentId: 'physical-region:control',
-        position: { x: group.x, y: group.y },
-        style: { width: group.width, height: group.height, zIndex: -1 },
-        draggable: false,
-        selectable: false,
-        data: { programGroup: { id: `section-${id}`, label: group.label, note: group.note, role: 'section' }, ownerBlock: programBlock, selected: selectedBlockId === programBlockId, rawHighlighted: rawHighlightedBlockIds.has(programBlockId) },
-      })
       for (const item of programNodes) {
         const layout = programLoadNodeLayout[item.id]
         nodes.push({
@@ -722,8 +694,9 @@ export default function PhysicalArchitectureGraph({ regions, blocks, interfaces,
       const endpointBlock = blockById.get(blockId)
       if (blockId === item.destinationBlockId && endpointBlock && frontendByFu.has(endpointBlock.kind) && (item.direction === 'program-load' || item.direction === 'instruction-dispatch')) return `physical-frontend:${blockId}`
       if (blockId !== programBlockId) return blockId
+      if (item.direction === 'program-load' && item.destinationBlockId === 'physical:central:vxm') return 'arch:control:program-load:elastic'
       if (item.direction === 'program-load' && /^physical:(west|east):/.test(item.destinationBlockId)) return programRelayFabricId
-      return 'arch:control:program-load:decode'
+      return 'arch:control:program-load:fu-entry'
     }
     const globalLeft = (blockId: string) => {
       if (blockId === programBlockId || blockId === 'physical:control:instruction-dma') return regionLayout.control.x + programLoadNodeLayout['arch:control:program-load:instruction-dma'].x
@@ -762,8 +735,10 @@ export default function PhysicalArchitectureGraph({ regions, blocks, interfaces,
       const semantic = interfaceSemanticPresentation(item.id, item.name)
       const labelName = summary?.name ?? semantic.displayName
       const edgeColor = item.id === selectedInterfaceId ? '#c17823' : ENGINEERING_NAVY
-      const endpointName = (blockId: string) => blockId === programBlockId && item.direction === 'program-load' && /^physical:(west|east):/.test(item.destinationBlockId)
-        ? 'Seven-stage Relay Chain + FU Subsystem Boundary'
+      const endpointName = (blockId: string) => blockId === programBlockId && item.direction === 'program-load' && item.destinationBlockId === 'physical:central:vxm'
+        ? 'Elastic Stage → VXM Boundary'
+        : blockId === programBlockId && item.direction === 'program-load' && /^physical:(west|east):/.test(item.destinationBlockId)
+        ? 'Relay Chain → FU Frontend / local iMEM'
         : blockById.get(blockId)?.displayName ?? blockId
       const sourceName = summary?.sourceName ?? endpointName(item.sourceBlockId)
       const destinationName = summary?.destinationName ?? endpointName(item.destinationBlockId)
@@ -875,6 +850,7 @@ export default function PhysicalArchitectureGraph({ regions, blocks, interfaces,
     }))
     const programRouteHint = (item: ArchitectureDrillInterface) => {
       const id = item.id
+      if (id.includes(':interface:main-')) return { sourceSide: 'right' as const, targetSide: 'left' as const, routingLane: id.endsWith('vxm-direct') ? 3 : 0 }
       if (id.endsWith(':command-write') || id.endsWith(':dma-command') || id.endsWith(':dma-response') || id.endsWith(':reservoir-builder') || id.endsWith(':word-handoff')) return { sourceSide: 'right' as const, targetSide: 'left' as const, routingLane: 0 }
       if (id.endsWith(':context-enqueue')) return { sourceSide: 'top' as const, targetSide: 'top' as const, routingLane: 3 }
       if (id.endsWith(':descriptor-fetch') || id.endsWith(':response-reservoir') || id.endsWith(':context-builder') || id.endsWith(':word-enqueue') || id.endsWith(':prime-handoff') || id.endsWith(':elastic-handoff')) return { sourceSide: 'bottom' as const, targetSide: 'top' as const, routingLane: 1 }

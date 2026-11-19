@@ -434,7 +434,7 @@ export function buildConfigurationOverviewModel(snapshot, physicalArchitecture) 
         count: null,
         status: 'needs-review',
         stages: [
-          stage(`${id}-program-boundary`, 'Local Program Transport', 'Not integrated in current SXM Subsystem', 'rtl/sxm/lpu_sxm_subsystem.sv', 5, 'Program Load boundary', 'local-iMEM transport is not implemented yet', 'needs-review'),
+          stage(`${id}-program-boundary`, 'SXM Local Instruction Entry', 'Boundary connected; local load adapter not integrated', 'rtl/sxm/lpu_sxm_subsystem.sv', 5, 'Program Load boundary', 'local-iMEM transport is not implemented yet', 'needs-review'),
           stage(`${id}-word-fifo`, 'Word FIFO', 'Buffers RUN_2D words', `rtl/sxm/lpu_sxm_${id}_macro_frontend.sv`, wordLine, 'u_word_fifo', 'lpu_queue_fifo'),
           stage(`${id}-decoder`, `${name.replace(' Frontend', '')} Macro Decoder`, 'RUN_2D macro decode', `rtl/sxm/lpu_sxm_${id}_macro_frontend.sv`, decoderLine, 'u_decoder', `lpu_sxm_${id}_macro_decoder`),
           stage(`${id}-context-fifo`, 'Context FIFO', 'Buffers decoded Context', `rtl/sxm/lpu_sxm_${id}_macro_frontend.sv`, contextLine, 'u_context_fifo', 'lpu_queue_fifo'),
@@ -458,7 +458,7 @@ export function buildConfigurationOverviewModel(snapshot, physicalArchitecture) 
         count: null,
         status: 'needs-review',
         stages: [
-          stage('vxm-program-boundary', 'Resident Config Adapter', 'Not integrated in current VXM Subsystem', 'rtl/vxm/lpu_vxm_subsystem.sv', 5, 'Program Load boundary', 'resident-config/Execute endpoint is not implemented yet', 'needs-review'),
+          stage('vxm-program-boundary', 'VXM Local Instruction Entry', 'Direct boundary connected; local load adapter not integrated', 'rtl/vxm/lpu_vxm_subsystem.sv', 5, 'Program Load boundary', 'resident-config/Execute endpoint is not implemented yet', 'needs-review'),
           stage('vxm-word-fifo', 'Word FIFO', 'Buffers RUN_2D packet words', 'rtl/vxm/lpu_vxm_macro_frontend.sv', 107, 'u_word_fifo', 'lpu_queue_fifo'),
           stage('vxm-decoder', 'VXM Macro Decoder', 'RUN_2D macro decode', 'rtl/vxm/lpu_vxm_macro_frontend.sv', 122, 'u_decoder', 'lpu_vxm_macro_decoder'),
           stage('vxm-context-fifo', 'Context FIFO', 'Buffers decoded Context', 'rtl/vxm/lpu_vxm_macro_frontend.sv', 152, 'u_context_fifo', 'lpu_queue_fifo'),
