@@ -99,7 +99,11 @@ export default function App() {
       next = await responseJson<Snapshot>(await fetch('/api/snapshot', { headers: { Accept: 'application/json' } }))
       setPublicSnapshotMode(false)
     } catch {
-      next = await responseJson<Snapshot>(await fetch('/data/architecture-snapshot.json', { headers: { Accept: 'application/json' } }))
+      const publicSnapshotUrl = `/data/architecture-snapshot.json?v=${Date.now()}`
+      next = await responseJson<Snapshot>(await fetch(publicSnapshotUrl, {
+        headers: { Accept: 'application/json' },
+        cache: 'no-store',
+      }))
       setPublicSnapshotMode(true)
     }
     if (!next.architecture || !next.physicalArchitecture) throw new Error('Snapshot 缺少 Physical Architecture Model，请重新扫描 RTL。')

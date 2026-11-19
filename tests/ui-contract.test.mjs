@@ -91,6 +91,12 @@ test('FU overview graphs keep nested RTL detail behind direct stage drilldown', 
   assert.match(detail, /interfaces: stageInterfaces/)
 })
 
+test('public snapshot loading bypasses stale CDN and browser caches', async () => {
+  const app = await read('src/App.tsx')
+  assert.match(app, /architecture-snapshot\.json\?v=\$\{Date\.now\(\)\}/)
+  assert.match(app, /cache: 'no-store'/)
+})
+
 test('semantic interface aliases and interactive evidence popovers are shared by physical and functional graphs', async () => {
   const [physical, functional, popover, tooltip, semanticConfig, styles] = await Promise.all([
     read('src/components/PhysicalArchitectureGraph.tsx'),
