@@ -105,6 +105,15 @@ function GraphNode({ data }: NodeProps<Node<GraphNodeData>>) {
       <footer>14 Distribution handshakes verified · 7 physical iMEM writes verified / Hemisphere · no 7-to-1 round-robin</footer>
     </div>
   }
+  if (item.nodeType === 'qctl-relay-fabric') {
+    const stages = Array.from({ length: 7 }, (_, index) => index)
+    return <div className={`connectivity-node architecture-node qctl-relay-fabric-node category-storage ${data.selected ? 'selected' : ''}`} data-node-id={item.id} data-node-type={item.nodeType} data-evidence-status={item.confidenceStatus} tabIndex={0} aria-label={`${item.displayName}。East 与 West 各七级独立 Relay Store，不是广播总线`}>
+      <AllSideHandles />
+      <header><strong>QCTL DISTRIBUTED RELAY STORE</strong><span>2 × 7 INDEPENDENT RTL RELAYS · NO BROADCAST BUS</span></header>
+      {(['EAST', 'WEST'] as const).map((side) => <div className="qctl-functional-relay-row" key={side}><b>{side}</b>{stages.map((stage) => <span key={`${side}-${stage}`}><strong>R{stage}</strong><small>64 Records</small></span>)}</div>)}
+      <footer>Load Manager routes by Queue ID · FU-local Endpoints read their owning regional Store directly</footer>
+    </div>
+  }
   const category = visualNodeCategory(item)
   const spec = buildHardwareQuickSpec(item)
   return <div className={`connectivity-node architecture-node node-${item.nodeType} category-${category} ${item.confidenceStatus === 'architecture-inferred' || item.confidenceStatus === 'needs-review' ? 'evidence-secondary' : ''} ${data.selected ? 'selected' : ''} ${data.context ? 'context-node' : ''}`} data-node-id={item.id} data-node-type={item.nodeType} data-node-category={category} data-evidence-status={item.confidenceStatus} tabIndex={0} aria-label={`${item.displayName}。${spec.primaryLabel}：${spec.primaryValue}`}>
@@ -309,6 +318,24 @@ function southNorthBankNodePosition(item: ArchitectureDrillNode) {
   return { x: 40, y: 420 }
 }
 
+const qctlOverviewGroupLayout: Record<string, { x: number; y: number; width: number; height: number; label: string; note: string }> = {
+  distribution: { x: 20, y: 20, width: 1560, height: 610, label: 'QCTL SOURCES + DISTRIBUTED RELAY', note: 'Event TAG is an independent runtime path; only QCTL record loads traverse the East / West Relay Stores.' },
+  runtime: { x: 20, y: 700, width: 1560, height: 760, label: 'FU-LOCAL QCTL CONTROL', note: 'Regional Store Head → Endpoint Reader → Five-State Controller → FU-local Scheduler Counter.' },
+}
+
+function qctlOverviewNodeLayout(item: ArchitectureDrillNode) {
+  if (item.id.endsWith(':events')) return { x: 80, y: 120, width: 360, height: 140 }
+  if (item.id.endsWith(':load-manager')) return { x: 1040, y: 120, width: 360, height: 140 }
+  if (item.id.endsWith(':relay-fabric')) return { x: 330, y: 340, width: 940, height: 240 }
+  if (item.id.endsWith(':readers')) return { x: 620, y: 760, width: 360, height: 140 }
+  if (item.id.endsWith(':controllers')) return { x: 620, y: 1010, width: 360, height: 140 }
+  if (item.id.endsWith(':counters')) return { x: 620, y: 1260, width: 360, height: 140 }
+  if (item.id.endsWith(':barrier')) return { x: 60, y: 1010, width: 280, height: 140 }
+  if (item.id.endsWith(':packet')) return { x: 1260, y: 1010, width: 280, height: 140 }
+  if (item.id.endsWith(':endpoints')) return { x: 1260, y: 1260, width: 280, height: 140 }
+  return { x: 620, y: 760, width: 360, height: 140 }
+}
+
 export default function FunctionalConnectivityGraph({ current, children, allNodes, localInterfaces, physicalInterfaces, rawConnections, blocks, selectedNodeId, selectedInterfaceId, selectedPhysicalInterfaceId, savedViewport, onReady, onViewportChange, onOpenNode, onOpenInterface }: Props) {
   const model = useMemo(() => {
     const incoming = physicalInterfaces.filter((item) => item.destinationBlockId === current.blockId)
@@ -320,6 +347,7 @@ export default function FunctionalConnectivityGraph({ current, children, allNode
     const memOverview = current.layout === 'mem-overview-south-north'
     const memLocalIssueOverview = current.layout === 'mem-local-issue-south-north'
     const southNorthBank = current.layout === 'south-north-bank'
+    const qctlOverview = current.id === 'arch:control:qctl'
     const positions = programLoadOverview
       ? new Map(children.map((item) => [item.id, programLoadNodePosition(item)]))
       : instructionDmaOverview
@@ -330,6 +358,8 @@ export default function FunctionalConnectivityGraph({ current, children, allNode
             ? new Map(children.map((item) => [item.id, memLocalIssueNodePosition(item)]))
             : southNorthBank
               ? new Map(children.map((item) => [item.id, southNorthBankNodePosition(item)]))
+              : qctlOverview
+                ? new Map(children.map((item) => [item.id, qctlOverviewNodeLayout(item)]))
       : internalLayout(children, localInterfaces, current.layout, vertical)
     // L1 already owns cross-block physical connectivity.  When a functional
     // scope has real internal interfaces, repeating every external bus here
@@ -338,17 +368,19 @@ export default function FunctionalConnectivityGraph({ current, children, allNode
     const showExternalBoundary = !current.parentId && localInterfaces.length === 0
     const hasIncoming = showExternalBoundary && incoming.length > 0
     const hasOutgoing = showExternalBoundary && outgoing.length > 0
-    const customAbsoluteLayout = programLoadOverview || instructionDmaOverview || memOverview || memLocalIssueOverview || southNorthBank
+    const customAbsoluteLayout = programLoadOverview || instructionDmaOverview || memOverview || memLocalIssueOverview || southNorthBank || qctlOverview
     const childOffset = customAbsoluteLayout ? 0 : !vertical && hasIncoming ? 420 : 80
     const childOffsetY = customAbsoluteLayout ? 0 : vertical && hasIncoming ? 250 : 100
     const nodeWidth = 315
     const nodeHeight = 136
     const nodes: Node<GraphNodeData>[] = children.map((item) => {
       const relayFabric = item.nodeType === 'program-relay-fabric'
-      return { id: item.id, type: 'architecture', position: { x: childOffset + (positions.get(item.id)?.x ?? 0), y: childOffsetY + (positions.get(item.id)?.y ?? 0) }, style: { width: relayFabric ? 715 : nodeWidth, height: relayFabric ? 178 : nodeHeight, zIndex: 5 }, data: { node: item, selected: selectedNodeId === item.id, context: false } }
+      const qctlLayout = qctlOverview ? qctlOverviewNodeLayout(item) : undefined
+      return { id: item.id, type: 'architecture', position: { x: childOffset + (positions.get(item.id)?.x ?? 0), y: childOffsetY + (positions.get(item.id)?.y ?? 0) }, style: { width: qctlLayout?.width ?? (relayFabric ? 715 : nodeWidth), height: qctlLayout?.height ?? (relayFabric ? 178 : nodeHeight), zIndex: 5 }, data: { node: item, selected: selectedNodeId === item.id, context: false } }
     })
     if (programLoadOverview) for (const [key, group] of Object.entries(programLoadGroupLayout)) nodes.unshift({ id: `${current.id}:group:${key}`, type: 'group', position: { x: group.x, y: group.y }, style: { width: group.width, height: group.height, zIndex: -4 }, draggable: false, selectable: false, data: { groupLabel: group.label, groupNote: group.note, selected: false, context: false } })
     if (instructionDmaOverview) for (const [key, group] of Object.entries(instructionDmaGroupLayout)) nodes.unshift({ id: `${current.id}:group:${key}`, type: 'group', position: { x: group.x, y: group.y }, style: { width: group.width, height: group.height, zIndex: -4 }, draggable: false, selectable: false, data: { groupLabel: group.label, groupNote: group.note, selected: false, context: false } })
+    if (qctlOverview) for (const [key, group] of Object.entries(qctlOverviewGroupLayout)) nodes.unshift({ id: `${current.id}:group:${key}`, type: 'group', position: { x: group.x, y: group.y }, style: { width: group.width, height: group.height, zIndex: -4 }, draggable: false, selectable: false, data: { groupLabel: group.label, groupNote: group.note, selected: false, context: false } })
     const displayIds = new Set(nodes.map((node) => node.id))
     let maxX = Math.max(childOffset + nodeWidth, ...nodes.map((node) => node.position.x + nodeWidth))
     let maxY = Math.max(childOffsetY + nodeHeight, ...nodes.map((node) => node.position.y + nodeHeight))
@@ -408,7 +440,7 @@ export default function FunctionalConnectivityGraph({ current, children, allNode
       edges.push({ id: item.id, source: `${current.id}:output-boundary`, target: externalId, type: 'architecture', markerEnd: { type: MarkerType.ArrowClosed, width: 12, height: 8, color: ENGINEERING_NAVY }, data: edgeData(item, true), zIndex: selectedPhysicalInterfaceId === item.id ? 5 : 1 })
     })
     const boxes: GraphBox[] = nodes.filter((node) => node.type !== 'group').map((node) => ({ id: node.id, x: node.position.x, y: node.position.y, width: Number(node.style?.width ?? nodeWidth), height: Number(node.style?.height ?? nodeHeight) }))
-    const topDownLayout = /(branch|merge|instruction-dma-overview|south-north)/.test(current.layout)
+    const topDownLayout = qctlOverview || /(branch|merge|instruction-dma-overview|south-north)/.test(current.layout)
     const nodeById = new Map(nodes.map((node) => [node.id, node]))
     const plans = layoutOrthogonalEdges(boxes, edges.map((edge, edgeIndex) => {
       const source = nodeById.get(edge.source)
@@ -429,6 +461,32 @@ export default function FunctionalConnectivityGraph({ current, children, allNode
         routingLane: edgeIndex % 6,
       }
     }), { obstaclePadding: 30, channelSpacing: 34, labelClearance: 18, labelSpacing: 14, maxLabelWidth: 244, laneSearchCount: 5, canvasPadding: 280 })
+    if (qctlOverview) {
+      const manualRoutes = new Map<string, { sourceSide: 'left' | 'right' | 'top' | 'bottom'; targetSide: 'left' | 'right' | 'top' | 'bottom'; points: Array<{ x: number; y: number }>; label: { x: number; y: number } }>([
+        [`${current.id}:interface:load-relay`, { sourceSide: 'bottom', targetSide: 'top', points: [{ x: 1220, y: 260 }, { x: 1220, y: 300 }, { x: 800, y: 300 }, { x: 800, y: 340 }], label: { x: 1010, y: 300 } }],
+        [`${current.id}:interface:relay-reader`, { sourceSide: 'bottom', targetSide: 'top', points: [{ x: 800, y: 580 }, { x: 800, y: 760 }], label: { x: 800, y: 670 } }],
+        [`${current.id}:interface:reader-controller`, { sourceSide: 'bottom', targetSide: 'top', points: [{ x: 800, y: 900 }, { x: 800, y: 1010 }], label: { x: 800, y: 955 } }],
+        [`${current.id}:interface:controller-counter`, { sourceSide: 'bottom', targetSide: 'top', points: [{ x: 800, y: 1150 }, { x: 800, y: 1260 }], label: { x: 800, y: 1205 } }],
+        [`${current.id}:interface:barrier-controller`, { sourceSide: 'right', targetSide: 'left', points: [{ x: 340, y: 1080 }, { x: 620, y: 1080 }], label: { x: 480, y: 1080 } }],
+        [`${current.id}:interface:event-controller`, { sourceSide: 'left', targetSide: 'top', points: [{ x: 80, y: 190 }, { x: 40, y: 190 }, { x: 40, y: 950 }, { x: 800, y: 950 }, { x: 800, y: 1010 }], label: { x: 330, y: 950 } }],
+        [`${current.id}:interface:controller-packet`, { sourceSide: 'right', targetSide: 'left', points: [{ x: 980, y: 1080 }, { x: 1260, y: 1080 }], label: { x: 1120, y: 1080 } }],
+      ])
+      for (const [edgeId, route] of manualRoutes) {
+        const plan = plans.get(edgeId)
+        if (!plan) continue
+        plan.sourceSide = route.sourceSide
+        plan.targetSide = route.targetSide
+        plan.points = route.points
+        plan.waypoints = route.points.slice(1, -1)
+        plan.path = route.points.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' ')
+        plan.labelX = route.label.x
+        plan.labelY = route.label.y
+        plan.labelAnchorX = route.label.x
+        plan.labelAnchorY = route.label.y
+        plan.labelOffset = { x: 0, y: 0 }
+        plan.lineStyle = 'solid'
+      }
+    }
     for (const edge of edges) {
       const plan = plans.get(edge.id)
       if (!plan) continue
@@ -469,6 +527,8 @@ export default function FunctionalConnectivityGraph({ current, children, allNode
     nodesDraggable={false}
     nodesConnectable={false}
     elementsSelectable
+    zoomOnScroll={false}
+    panOnScroll
     minZoom={.28}
     maxZoom={1.7}
     defaultViewport={savedViewport ?? { x: 30, y: 30, zoom: .9 }}
@@ -478,7 +538,7 @@ export default function FunctionalConnectivityGraph({ current, children, allNode
     onNodeClick={(_, node) => { const item = (node.data as GraphNodeData).node; if (item) onOpenNode(item) }}
     onEdgeClick={(_, edge) => { const data = edge.data as GraphEdgeData; onOpenInterface(data.id, data.physical) }}
     proOptions={{ hideAttribution: true }}
-    className="engineering-graph functional-engineering-graph"
+    className={`engineering-graph functional-engineering-graph ${current.id === 'arch:control:qctl' ? 'qctl-functional-overview' : ''}`}
     colorMode="light"
   >
     <Background color="#cbd4e1" gap={26} size={1} />

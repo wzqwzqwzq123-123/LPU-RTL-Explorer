@@ -126,7 +126,7 @@ test('Bus Detail uses semantic display names, meanings and secondary RTL names',
     read('src/lib/signal-presentation.ts'),
     read('src/styles.css'),
   ])
-  for (const name of ['Word Strobe / Mask', 'Scope / 12-bit Destination / iMEM Address', 'Program Word Payload', 'Handshake']) assert.match(presentation, new RegExp(name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
+  for (const name of ['Word Strobe / Mask', 'Scope / 13-bit Destination / iMEM Address', 'Program Word Payload', 'Handshake']) assert.match(presentation, new RegExp(name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
   assert.match(presentation, /rtlName/)
   assert.match(presentation, /meaning/)
   assert.match(detail, /bus-signal-name/)

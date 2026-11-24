@@ -16,8 +16,8 @@ const snapshot = attachArchitectureModel(
 )
 
 test('real local RTL inventory and top are captured', () => {
-  assert.equal(snapshot.summary.sourceFileCount, 197)
-  assert.equal(snapshot.summary.primaryFilelistRtlFileCount, 79)
+  assert.equal(snapshot.summary.sourceFileCount, 182)
+  assert.equal(snapshot.summary.primaryFilelistRtlFileCount, 68)
   assert.equal(snapshot.summary.autoTop, 'lpu_top')
   assert.equal(snapshot.summary.selectedTop, 'lpu_top')
   assert.ok(snapshot.summary.definitionCount > 100)
@@ -73,9 +73,9 @@ test('generate templates and black boxes are explicit rather than invented', () 
   assert.ok(snapshot.summary.generatedTemplateCount > 0)
   const generated = snapshot.modules.flatMap((module) => module.instances).filter((instance) => instance.generated)
   assert.ok(generated.some((instance) => instance.name === 'u_mem_subsystem'))
-  assert.equal(snapshot.summary.unresolvedInstanceCount, 1)
+  assert.equal(snapshot.summary.unresolvedInstanceCount, 0)
   assert.equal(snapshot.warnings.some((warning) => warning.code === 'UNRESOLVED_MODULE' && /lpu_qctl_(fabric|queue_controller)/.test(warning.message)), false)
-  assert.ok(snapshot.warnings.some((warning) => warning.code === 'UNRESOLVED_MODULE' && warning.message.includes('DW_fp_add')))
+  assert.equal(snapshot.warnings.some((warning) => warning.code === 'UNRESOLVED_MODULE'), false)
 })
 
 test('hierarchy keeps definitions and symbolic instances separate', () => {
@@ -123,7 +123,7 @@ test('MEM, MXM, and VXM subsystem views expose real interface evidence', () => {
   assert.equal(containers.some((node) => node.parentId === memFrontend.id && node.displayName === 'instruction_queue'), false)
   assert.equal(containers.some((node) => node.parentId === mem.id && node.displayName === 'timed_queue[bank]'), false)
   assert.ok(interfaces.some((item) => item.scopeId === mem.id && item.semanticName === 'Program Load Interface'))
-  assert.ok(interfaces.some((item) => item.scopeId === mxm.id && item.semanticName === 'Queue Enqueue Interface'))
+  assert.equal(interfaces.some((item) => item.scopeId === mxm.id && item.semanticName === 'Queue Enqueue Interface'), false)
   assert.ok(interfaces.some((item) => item.scopeId === mxm.id && item.semanticName === 'Issue Interface'))
   assert.ok(interfaces.some((item) => item.scopeId === vxm.id && item.semanticName === 'East Stream Interface'))
   assert.ok(interfaces.some((item) => item.scopeId === vxm.id && item.semanticName === 'West Stream Interface'))
@@ -154,7 +154,7 @@ test('global instruction distribution uses confirmed command storage, reconstruc
   assert.equal(pipeline?.structure.facts.find((fact) => fact.label === 'Byte reservoir')?.value, 64)
   assert.equal(pipeline?.structure.facts.find((fact) => fact.label === 'Word FIFO depth')?.value, 8)
   assert.equal(pipeline?.structure.facts.find((fact) => fact.label === 'Scope width')?.value, 2)
-  assert.equal(pipeline?.structure.facts.find((fact) => fact.label === 'Destination width')?.value, 12)
+  assert.equal(pipeline?.structure.facts.find((fact) => fact.label === 'Destination width')?.value, 13)
   assert.equal(pipeline?.structure.facts.find((fact) => fact.label === 'Elastic depth')?.value, 2)
   assert.match(pipeline?.structure.namingNote ?? '', /register array, not instruction-payload SRAM/i)
   for (const id of ['physical:control:west-router', 'physical:control:east-router']) assert.equal(byId.has(id), false)
@@ -257,7 +257,10 @@ test('SXM and VXM show connected Program boundaries without claiming integrated 
     assert.ok(drill.nodes.some((node) => node.id === `${id}:macro-frontend` && node.confidenceStatus === 'partially-verified'))
   }
   for (const id of ['arch:west:mxm', 'arch:east:mxm']) {
-    assert.match(drill.nodes.find((node) => node.id === id)?.tags.map((tag) => `${tag.label} ${tag.value}`).join(' ') ?? '', /49\/48.*VERIFY_REQUIRED/)
+    const root = drill.nodes.find((node) => node.id === id)
+    assert.match(root?.tags.map((tag) => `${tag.label} ${tag.value}`).join(' ') ?? '', /CURRENT TOP-INTEGRATED RTL/)
+    assert.ok(root?.rtlModuleRefs.includes('lpu_mxm_core'))
+    assert.ok(drill.nodes.some((node) => node.id === `${id}:core` && node.confidenceStatus === 'rtl-confirmed'))
   }
 })
 
@@ -321,15 +324,15 @@ test('MEM functional decode path selects lpu_mem_macro_decoder and keeps tile de
   const macro = drill.nodes.find((node) => node.id === 'arch:west:mem:macro')
   const macroDecoder = drill.nodes.find((node) => node.id === 'arch:west:mem:macro:decoder')
   assert.deepEqual(root?.childIds.map((id) => drill.nodes.find((node) => node.id === id)?.displayName), [
-    'MEM Frontend / Local iMEM · 104', 'MEM Instruction Decode / Control', 'MEM Data Path · Native Execution Array',
-    'East / West Stream Interface',
+    'Bank-local Macro Frontend · 104', 'MEM64 → Native32 Command Adapter · 104', 'Native MEM Execution Array',
+    'MEM / SRF Parallel Data Plane',
   ])
   assert.ok(macro?.rtlModuleRefs.includes('lpu_mem_macro_decoder'))
   assert.equal(macro?.rtlModuleRefs.includes('lpu_mem_instruction_decode'), false)
   assert.deepEqual(macroDecoder?.rtlModuleRefs, ['lpu_mem_macro_decoder'])
   const leaf = drill.nodes.find((node) => node.id === 'arch:west:mem:execution:column:0:bank:0:tile:0')
   assert.ok(leaf?.rtlModuleRefs.includes('mem_bank_superlane_leaf'))
-  assert.match(leaf?.description ?? '', /8192×64 Native SRAM leaf/i)
+  assert.match(leaf?.description ?? '', /8192 rows × 64 bits/i)
 })
 
 test('MEM Native array drills through 13 groups, 52 slices, 104 banks and four superlane leaves', () => {
@@ -344,36 +347,47 @@ test('MEM Native array drills through 13 groups, 52 slices, 104 banks and four s
   assert.equal(column0?.displayName, 'Slice[0]')
   assert.equal(column0?.childIds.length, 2)
   const bank0 = nodes.find((node) => node.id === 'arch:west:mem:execution:column:0:bank:0')
-  const tileArray = nodes.find((node) => node.id === bank0?.childIds.find((id) => nodes.find((candidate) => candidate.id === id)?.displayName === 'Superlane SRAM Leaves'))
-  assert.equal(tileArray?.childIds.length, 4)
-  assert.equal(tileArray?.displayName, 'Superlane SRAM Leaves')
+  assert.deepEqual(bank0?.childIds.map((id) => nodes.find((node) => node.id === id)?.displayName), [
+    'Bank Control Column',
+    'Superlane[0] SRAM Leaf',
+    'Superlane[1] SRAM Leaf',
+    'Superlane[2] SRAM Leaf',
+    'Superlane[3] SRAM Leaf',
+  ])
+  const leaf = nodes.find((node) => node.id === 'arch:west:mem:execution:column:0:bank:0:tile:0')
+  assert.deepEqual(leaf?.childIds.map((id) => nodes.find((node) => node.id === id)?.displayName), ['SRAM Row Read', 'SRAM Row Write / WriteTap'])
 })
 
-test('MEM instruction queue is the final stage inside the bank-local frontend feeding the bank column northward', () => {
+test('MEM Macro Scheduler issues directly into the MEM64 / Native32 adapter without an Instruction Queue', () => {
   const drill = snapshot.physicalArchitecture.drilldown
   const nodes = new Map(drill.nodes.map((node) => [node.id, node]))
   const root = nodes.get('arch:west:mem')
   const localIssue = nodes.get('arch:west:mem:local-issue-path')
-  assert.equal(root?.layout, 'mem-overview-south-north')
-  assert.equal(localIssue?.layout, 'mem-local-issue-south-north')
+  assert.equal(root?.layout, 'mem-interactive-overview')
+  assert.equal(localIssue?.layout, 'pipeline')
   assert.equal(nodes.get('arch:west:mem:frontend')?.parentId, localIssue?.id)
   assert.equal(nodes.get('arch:west:mem:macro')?.parentId, 'arch:west:mem:frontend')
-  assert.equal(nodes.get('arch:west:mem:timed-queue')?.parentId, 'arch:west:mem:frontend')
-  assert.equal(nodes.get('arch:west:mem:issue-select')?.parentId, localIssue?.id)
+  assert.equal(nodes.has('arch:west:mem:timed-queue'), false)
+  assert.equal(nodes.has('arch:west:mem:issue-select'), false)
+  assert.equal(nodes.get('arch:west:mem:macro:scheduler:issue')?.displayName, 'Direct MEM64 Issue')
   const bank = nodes.get('arch:west:mem:execution:column:0:bank:0')
   assert.equal(bank?.layout, 'south-north-bank')
   assert.ok(bank?.childIds.includes('arch:west:mem:execution:column:0:bank:0:control-column'))
-  assert.ok(drill.interfaces.some((item) => item.id === 'arch:west:mem:interface:selector-execution' && /Frontend.*Decode/.test(item.name)))
-  assert.ok(drill.interfaces.some((item) => item.id.endsWith(':interface:tile-command') && item.name === 'South → North Bank Command'))
+  assert.ok(drill.interfaces.some((item) => item.id === 'arch:west:mem:macro:scheduler:interface:direct-issue' && item.name === 'Direct MEM64 Issue'))
+  assert.ok(drill.interfaces.some((item) => item.id === 'arch:west:mem:interface:selector-execution' && /MEM64.*Native32/.test(item.name)))
+  const memNodes = drill.nodes.filter((node) => node.id.startsWith('arch:west:mem'))
+  assert.equal(memNodes.some((node) => node.rtlModuleRefs.includes('lpu_mem_instruction_queue')), false)
+  assert.equal(memNodes.some((node) => node.displayName === 'Instruction Queue · 104'), false)
 })
 
-test('MEM queue-to-execution buses preserve parsed raw bindings', () => {
+test('MEM direct-issue buses preserve parsed raw bindings', () => {
   const drill = snapshot.physicalArchitecture.drilldown
   const byId = new Map(drill.interfaces.map((item) => [item.id, item]))
-  assert.equal(byId.get('arch:west:mem:interface:macro-queue')?.signalCount, 0)
-  assert.ok((byId.get('arch:west:mem:interface:queue-selector')?.signalCount ?? 0) >= 4)
+  assert.equal(byId.has('arch:west:mem:interface:macro-queue'), false)
+  assert.equal(byId.has('arch:west:mem:interface:queue-selector'), false)
+  assert.ok((byId.get('arch:west:mem:macro:scheduler:interface:direct-issue')?.signalCount ?? 0) >= 4)
   assert.ok((byId.get('arch:west:mem:interface:selector-execution')?.signalCount ?? 0) >= 4)
-  assert.match(byId.get('arch:west:mem:interface:macro-queue')?.sourceEvidence[0]?.file ?? '', /lpu_mem_local_imem_frontend\.sv/)
+  assert.match(byId.get('arch:west:mem:macro:scheduler:interface:direct-issue')?.sourceEvidence[0]?.file ?? '', /lpu_mem_macro_scheduler\.sv/)
 })
 
 test('removed central ICU queue-bank architecture is absent from visualization and the current RTL snapshot', () => {
@@ -385,15 +399,16 @@ test('removed central ICU queue-bank architecture is absent from visualization a
   assert.equal(snapshot.hierarchy.nodes.some((node) => node.moduleName === 'lpu_icu' || node.moduleName === 'lpu_icu_queue'), false)
 })
 
-test('QCTL System exposes the formal Pool, Cache, Controller, counter and blocking-semantics hierarchy', () => {
+test('QCTL exposes distributed Relay Stores, FU-local Endpoints, Controllers and runtime blocking semantics', () => {
   const drill = snapshot.physicalArchitecture.drilldown
   const nodes = new Map(drill.nodes.map((node) => [node.id, node]))
   const qctlRoot = drill.nodes.find((node) => node.id === 'arch:control:qctl')
-  const pool = drill.nodes.find((node) => node.id === 'arch:control:qctl:pool')
-  assert.equal(qctlRoot?.displayName, 'QCTL System · 220 Formal Endpoints')
+  const relayFabric = drill.nodes.find((node) => node.id === 'arch:control:qctl:relay-fabric')
+  assert.equal(qctlRoot?.displayName, 'QCTL Distributed Relay Store · 228 Formal Endpoints')
   assert.deepEqual(qctlRoot?.childIds, [
-    'arch:control:qctl:pool',
-    'arch:control:qctl:caches',
+    'arch:control:qctl:load-manager',
+    'arch:control:qctl:relay-fabric',
+    'arch:control:qctl:readers',
     'arch:control:qctl:controllers',
     'arch:control:qctl:counters',
     'arch:control:qctl:barrier',
@@ -401,15 +416,18 @@ test('QCTL System exposes the formal Pool, Cache, Controller, counter and blocki
     'arch:control:qctl:packet',
     'arch:control:qctl:endpoints',
   ])
-  assert.match(pool?.description ?? '', /single-port record Pool.*round-robin arbitration.*partition ownership/i)
-  assert.deepEqual(nodes.get('arch:control:qctl:caches')?.childIds.map((id) => nodes.get(id)?.displayName), ['Fetch Offset', 'Retire Offset', 'In-flight Read', 'Stable Head Record'])
+  assert.match(relayFabric?.description ?? '', /seven regional Relay stages.*Queue Directory.*64-entry Record Array.*Valid Bitmap.*Transit FIFO/i)
+  assert.deepEqual(nodes.get('arch:control:qctl:relay-fabric:east')?.childIds.map((id) => nodes.get(id)?.displayName), ['R0 · MEM 0..15', 'R1 · MEM 16..31', 'R2 · MEM 32..47', 'R3 · MEM 48..63', 'R4 · MEM 64..79', 'R5 · MEM 80..95', 'R6 · MEM 96..103 + 10 MXM stream endpoints'])
+  assert.deepEqual(nodes.get('arch:control:qctl:relay-fabric:west')?.childIds.map((id) => nodes.get(id)?.displayName), ['R0 · MEM 104..119', 'R1 · MEM 120..135', 'R2 · MEM 136..151', 'R3 · MEM 152..167', 'R4 · MEM 168..183', 'R5 · MEM 184..199', 'R6 · MEM 200..207 + 10 MXM stream endpoints'])
+  assert.deepEqual(nodes.get('arch:control:qctl:relay-fabric:store-anatomy')?.childIds.map((id) => nodes.get(id)?.displayName), ['Queue Directory', '96-bit Record Array', 'Record Valid Bitmap', 'Transit FIFO'])
+  assert.deepEqual(nodes.get('arch:control:qctl:readers')?.childIds.map((id) => nodes.get(id)?.displayName), ['Head Index + Generation', 'Store Validity Guard', 'Semantic Retirement'])
   assert.deepEqual(nodes.get('arch:control:qctl:controllers')?.childIds.map((id) => nodes.get(id)?.displayName), ['IDLE', 'SYNC_WAIT', 'EVENT_WAIT', 'NOTIFY_WAIT', 'MEMPACKET_WAIT'])
-  assert.deepEqual(nodes.get('arch:control:qctl:endpoints')?.childIds.map((id) => nodes.get(id)?.displayName), ['MEM Banks · 0..207', 'MXM Load · 208..211', 'MXM Dequant · 212..215', 'MXM Compute · 216..219', 'VXM · Not Connected', 'SXM · Not Connected'])
-  assert.match(nodes.get('arch:control:qctl:barrier')?.description ?? '', /early NOTIFY.*every participant.*one Release pulse.*round is cleared/i)
+  assert.deepEqual(nodes.get('arch:control:qctl:endpoints')?.childIds.map((id) => nodes.get(id)?.displayName), ['MEM Banks · 0..207', 'MXM Load · 208..211', 'MXM Dequant · 212..215', 'MXM Compute · 216..219', 'MXM Param Load · 220..223', 'MXM Backend · 224..227', 'VXM · Not Connected', 'SXM · Not Connected'])
+  assert.match(nodes.get('arch:control:qctl:barrier')?.description ?? '', /early NOTIFY.*every participant.*one Release pulse.*clears the round/i)
   assert.match(nodes.get('arch:control:qctl:events')?.description ?? '', /matching TAG.*every Controller/i)
   assert.match(nodes.get('arch:control:qctl:packet')?.description ?? '', /must not be presented as an SRAM Commit/i)
   const qctlText = drill.nodes.filter((node) => node.id.startsWith('arch:control:qctl')).map((node) => `${node.displayName} ${node.description} ${node.rtlModuleRefs.join(' ')}`).join('\n')
-  assert.doesNotMatch(qctlText, /lpu_qctl_fabric|lpu_qctl_queue_controller|Legacy|Compatibility/i)
+  assert.doesNotMatch(qctlText, /lpu_qctl_system|lpu_qctl_shared_pool|lpu_qctl_queue_cache|lpu_qctl_sync_fabric|Legacy|Compatibility/i)
 })
 
 test('Word FIFO quick specification is fully RTL-backed', () => {
@@ -418,13 +436,12 @@ test('Word FIFO quick specification is fully RTL-backed', () => {
   assert.equal(node?.parameterRefs.find((item) => item.name === 'DEPTH')?.value, 4)
 })
 
-test('distributed FU-local control keeps MEM and MXM queues inside their owning subsystems', () => {
+test('distributed FU-local control keeps direct MEM issue and the current MXM command waves inside their owning subsystems', () => {
   const nodes = new Map(snapshot.physicalArchitecture.drilldown.nodes.map((node) => [node.id, node]))
-  assert.equal(nodes.get('arch:west:mem:timed-queue')?.displayName, 'Instruction Queue · 104')
-  assert.equal(nodes.get('arch:west:mem:timed-queue')?.parentId, 'arch:west:mem:frontend')
-  assert.equal(nodes.get('arch:west:mem:issue-select')?.displayName, 'FU-local Issue Select')
-  assert.equal(nodes.get('arch:west:mem:issue-select')?.childIds.some((id) => /external/i.test(nodes.get(id)?.displayName ?? '')), false)
-  for (const kind of ['load', 'dequant', 'compute']) assert.ok(nodes.has(`arch:west:mxm:${kind}-queue`))
+  assert.equal(nodes.has('arch:west:mem:timed-queue'), false)
+  assert.equal(nodes.has('arch:west:mem:issue-select'), false)
+  assert.equal(nodes.get('arch:west:mem:macro:scheduler')?.childIds.length, 4)
+  for (const kind of ['compute', 'load', 'param-load', 'dequant']) assert.ok(nodes.has(`arch:west:mxm:core:frontend:control:${kind}`))
 })
 
 test('explicit FIFO nodes retain RTL-backed width, depth, contents and source mapping', () => {
@@ -433,21 +450,30 @@ test('explicit FIFO nodes retain RTL-backed width, depth, contents and source ma
   assert.equal(value('arch:west:mem:macro:word-fifo', 'DATA_WIDTH'), 97)
   assert.equal(value('arch:west:mem:macro:word-fifo', 'DEPTH'), 4)
   assert.equal(value('arch:west:mem:macro:context-fifo', 'DATA_WIDTH'), 271)
-  assert.equal(value('arch:west:mem:timed-queue:fifo', 'DATA_WIDTH'), 96)
-  assert.equal(value('arch:west:mem:timed-queue:fifo', 'DEPTH'), 16)
-  assert.match(nodes.get('arch:west:mem:timed-queue:fifo')?.description ?? '', /cycle.*instruction/i)
-  assert.equal(value('arch:west:mxm:load-queue:fifo', 'DEPTH'), 16)
+  assert.equal(nodes.has('arch:west:mem:timed-queue:fifo'), false)
+  assert.equal(value('arch:west:mem:macro:scheduler:issue', 'INSTRUCTION'), 64)
+  assert.equal(value('arch:west:mem:macro:scheduler:issue', 'CYCLE'), 32)
+  assert.equal(value('arch:west:mxm:core:frontend:control', 'QUEUE_DEPTH'), 16)
+  assert.equal(value('arch:west:mxm:core:backend', 'BANK_DEPTH'), 512)
+  assert.equal(value('arch:west:mxm:core:backend', 'BANK_WORD_BITS'), 256)
 })
 
-test('MXM frontends and timed queues expose FIFO-decoder-scheduler structure', () => {
+test('MXM exposes the integrated core, 4x4 Supercell template and arithmetic pipelines without legacy execution nodes', () => {
   const nodes = new Map(snapshot.physicalArchitecture.drilldown.nodes.map((node) => [node.id, node]))
-  for (const kind of ['load', 'dequant', 'compute']) {
-    const frontend = nodes.get(`arch:west:mxm:${kind}-frontend`)
-    assert.deepEqual(frontend?.childIds.map((id) => nodes.get(id)?.displayName), ['Word FIFO', `${kind[0].toUpperCase()}${kind.slice(1)} Macro Decoder`, 'Context FIFO', 'Macro Scheduler'])
-    assert.equal(nodes.get(`arch:west:mxm:${kind}-queue`)?.childIds.length, 2)
-    assert.equal(nodes.get(`arch:west:mxm:${kind}-queue:fifo`)?.parameterRefs.find((item) => item.name === 'DATA_WIDTH')?.value, 81)
-    assert.equal(nodes.get(`arch:west:mxm:${kind}-queue:fifo`)?.parameterRefs.find((item) => item.name === 'DEPTH')?.value, 16)
-  }
+  const root = nodes.get('arch:west:mxm')
+  const core = nodes.get('arch:west:mxm:core')
+  const array = nodes.get('arch:west:mxm:core:frontend:array')
+  const supercell = nodes.get('arch:west:mxm:core:frontend:array:supercell')
+  assert.equal(root?.layout, 'mxm-core-overview')
+  assert.deepEqual(core?.childIds.map((id) => nodes.get(id)?.nodeType), ['mxm-frontend', 'mxm-result-return', 'mxm-backend'])
+  assert.equal(array?.parameterRefs.find((item) => item.name === 'ROWS')?.value, 4)
+  assert.equal(array?.parameterRefs.find((item) => item.name === 'COLS')?.value, 4)
+  assert.equal(supercell?.childIds.filter((id) => nodes.get(id)?.nodeType === 'mxm-group').length, 8)
+  assert.equal(nodes.get(`${supercell?.id}:group:0:dot`)?.parameterRefs.find((item) => item.name === 'STAGES')?.value, 9)
+  assert.equal(nodes.get(`${supercell?.id}:group:0:partial-add`)?.parameterRefs.find((item) => item.name === 'STAGES')?.value, 3)
+  assert.match(nodes.get(`${supercell?.id}:group:0:dot:csa`)?.displayName ?? '', /8→6→4→3→2/)
+  const mxmNodes = [...nodes.values()].filter((node) => node.id.startsWith('arch:west:mxm'))
+  assert.equal(mxmNodes.some((node) => node.rtlModuleRefs.includes('lpu_mxm_slice') || node.rtlModuleRefs.includes('lpu_mxm_shared_accumulator')), false)
 })
 
 test('priority Bus Detail interfaces retain raw RTL evidence for program-load and stream directions', () => {
@@ -480,7 +506,7 @@ test('priority Program Load buses use specific purpose groups instead of broad b
     'Program Load Handshake',
     'Program Word · 128-bit Transport',
     'Program Word Strobe · 4 × 32-bit',
-    'Scope / 12-bit Destination / iMEM Address',
+    'Scope / 13-bit Destination / iMEM Address',
   ])
   assert.ok(groupNames('Distributor Input Handshake').includes('Program Load Control · WRITE / PRIME'))
 })
@@ -504,8 +530,8 @@ test('distributed Program Load terminates at FU-local iMEM and local macro paths
   const programEndpoints = physical.interfaces.filter((entry) => /Local iMEM Load/.test(entry.name))
   assert.deepEqual(programEndpoints.map((entry) => entry.destinationBlockId).sort(), ['physical:east:mem', 'physical:east:mxm', 'physical:west:mem', 'physical:west:mxm'])
   const localNames = physical.drilldown.nodes.map((node) => node.displayName)
-  for (const name of ['MEM Frontend / Local iMEM · 104', 'MEM Frontend · 104', 'Macro Decode / Scheduler', 'Instruction Queue · 104', 'MEM Instruction Decode / Control', 'FU-local Issue Select']) assert.ok(localNames.includes(name))
-  for (const name of ['MXM Frontend / Local iMEM', 'MXM Macro Decode / Timed Issue', 'MXM Data Path · Matrix Execution', 'SXM Frontend / Local Instruction Entry', 'SXM 指令译码（架构概括）', 'SXM Data Path · Transpose / Permute', 'VXM Frontend / Local Instruction Entry', 'VXM 指令译码（架构概括）', 'VXM Data Path · Vector Execution Array']) assert.ok(localNames.includes(name))
+  for (const name of ['Bank-local Macro Frontend · 104', 'MEM Frontend · Local iMEM + Macro', 'Macro Decode / Schedule Pipeline', 'MEM Macro Scheduler', 'Direct MEM64 Issue', 'MEM64 → Native32 Command Adapter · 104']) assert.ok(localNames.includes(name))
+  for (const name of ['Five-Stream MXM ICU Frontends · Direct Native Issue', 'Shared MXM Macro Decoder Architecture · 12 States', 'Integrated MXM Core', 'MXM Frontend · 4×4 Supercell Array', 'Static Diagonal Result Return', 'MXM Backend · Column Accumulator', 'SXM Frontend / Local Instruction Entry', 'SXM 指令译码（架构概括）', 'SXM Data Path · Transpose / Permute', 'VXM Frontend / Local Instruction Entry', 'VXM 指令译码（架构概括）', 'VXM Data Path · Vector Execution Array']) assert.ok(localNames.includes(name))
 })
 
 test('MEM Native visualization preserves the current active RTL boundary', () => {
@@ -517,11 +543,11 @@ test('MEM Native visualization preserves the current active RTL boundary', () =>
   assert.match(nodes.get('arch:west:mem:native-adapter:unsupported')?.description ?? '', /GATHER.*SCATTER.*opcode 2/i)
   const qctl = physical.blocks.find((block) => block.id === 'physical:control:qctl')
   assert.equal(qctl?.placementStatus, 'rtl-confirmed')
-  assert.equal(qctl?.displayName, 'QCTL System · 220 Formal Endpoints')
+  assert.equal(qctl?.displayName, 'QCTL Distributed Relay Store · 228 Endpoints')
   assert.equal(qctl?.enabledByDefault, false)
-  assert.match(qctl?.function ?? '', /Shared QCTL Pool.*220 per-Queue Caches.*220 five-state Controllers.*208 MEM.*12 MXM/i)
+  assert.match(qctl?.function ?? '', /Load Manager.*East\/West QCTL Relay chains.*14 regional Stores.*228 FU-local Endpoint readers.*208 MEM.*20 MXM/i)
   assert.match(qctl?.function ?? '', /VXM and SXM are not formal QCTL endpoints/i)
-  assert.deepEqual(qctl?.definitionNames, ['lpu_qctl_system', 'lpu_qctl_shared_pool', 'lpu_qctl_queue_cache', 'lpu_qctl_controller', 'lpu_qctl_sync_fabric', 'lpu_qctl_event_buffer'])
+  assert.deepEqual(qctl?.definitionNames, ['lpu_qctl_global_subsystem', 'lpu_qctl_load_manager', 'lpu_qctl_relay_chain', 'lpu_qctl_relay', 'lpu_qctl_endpoint', 'lpu_qctl_controller', 'lpu_qctl_fabric', 'lpu_qctl_event_buffer'])
 })
 
 test('Instruction DMA is RTL-confirmed while DDR and AXI/C2C remain explicit review boundaries', () => {

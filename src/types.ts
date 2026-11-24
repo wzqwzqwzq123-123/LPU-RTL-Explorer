@@ -665,6 +665,20 @@ export interface ConfigurationOverviewModel {
     status: EvidenceStatus
     groups: Array<{ id: string; name: string; first: number; last: number; count: number; status: EvidenceStatus; statement: string }>
     pipeline: Array<{ id: string; name: string; count: number | null; statement: string; evidence: ConfigurationEvidence[] }>
+    relayTopology: {
+      globalCapacity: number | null
+      regionDepth: number | null
+      queueEntryLimit: number | null
+      transitDepth: number | null
+      storeContract: Array<{ id: string; name: string; statement: string }>
+      phases: Array<{ id: string; name: string; path: string; statement: string }>
+      chains: Array<{
+        id: string
+        name: string
+        scope: string
+        stages: Array<{ id: string; name: string; queues: string; locals: string }>
+      }>
+    }
     states: Array<{ id: string; name: string; statement: string }>
     barrier: { participantMask: string; arrival: string; notify: string; release: string; roundIsolation: string }
     eventBuffer: { tagBits: number; depth: number | null; statement: string }

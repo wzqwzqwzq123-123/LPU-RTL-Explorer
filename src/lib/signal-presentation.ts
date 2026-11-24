@@ -51,10 +51,10 @@ const semanticRules: SemanticRule[] = [
   { pattern: /(?:^|_)(?:strb|strobe)$/, suffix: 'Segment Strobe / Mask', meaning: (object) => `${object}：标识 128-bit Program Word 中有效的 32-bit 段。`, groupAlias: 'Word Strobe / Mask' },
   { pattern: /(?:^|_)(?:keep|byte_mask)$/, suffix: 'Byte-valid Mask', meaning: (object) => `${object}：标识当前总线拍中哪些返回字节有效。`, groupAlias: 'Word Strobe / Mask' },
   { pattern: /(?:^|_)last$/, suffix: 'Last', meaning: (object) => `${object}：标识当前事务、图像或 Program Word 序列的最后一拍。`, groupAlias: 'Program Word Payload' },
-  { pattern: /(?:^|_)scope$/, suffix: 'Scope', meaning: (object) => `${object}：独立选择 EAST、WEST 或 BOTH；BOTH 在 Distributor 内展开为两个端点握手。`, groupAlias: 'Scope / 12-bit Destination / iMEM Address' },
-  { pattern: /(?:^|_)destination$/, suffix: '12-bit Destination', meaning: (object) => `${object}：编码 Endpoint Hemisphere[11]、FU Kind[10:8] 与 Local Target Index[7:0]。`, groupAlias: 'Scope / 12-bit Destination / iMEM Address' },
-  { pattern: /(?:^|_)(?:imem_address|imem_addr)$/, suffix: 'iMEM Address', meaning: (object) => `${object}：给出目标 FU 局部指令存储的地址。`, groupAlias: 'Scope / 12-bit Destination / iMEM Address' },
-  { pattern: /(?:^|_)(?:hemisphere|target_kind|target|queue_id|queue)$/, suffix: 'Legacy Route Field', meaning: (object) => `${object}：兼容旧快照命名；当前 Program Load 主契约使用独立 Scope 与 12-bit Destination。`, groupAlias: 'Legacy Routing / Needs Review' },
+  { pattern: /(?:^|_)scope$/, suffix: 'Scope', meaning: (object) => `${object}：独立选择 EAST、WEST 或 BOTH；BOTH 在 Distributor 内展开为两个端点握手。`, groupAlias: 'Scope / 13-bit Destination / iMEM Address' },
+  { pattern: /(?:^|_)destination$/, suffix: '13-bit Destination', meaning: (object) => `${object}：编码 Endpoint Hemisphere[12]、FU Kind[11:8] 与 Local Target Index[7:0]。`, groupAlias: 'Scope / 13-bit Destination / iMEM Address' },
+  { pattern: /(?:^|_)(?:imem_address|imem_addr)$/, suffix: 'iMEM Address', meaning: (object) => `${object}：给出目标 FU 局部指令存储的地址。`, groupAlias: 'Scope / 13-bit Destination / iMEM Address' },
+  { pattern: /(?:^|_)(?:hemisphere|target_kind|target|queue_id|queue)$/, suffix: 'Legacy Route Field', meaning: (object) => `${object}：兼容旧快照命名；当前 Program Load 主契约使用独立 Scope 与 13-bit Destination。`, groupAlias: 'Legacy Routing / Needs Review' },
   { pattern: /(?:^|_)(?:source_address|address|addr)$/, suffix: 'Address', meaning: (object) => `${object}：给出本次读取、写入或路由使用的地址。`, groupAlias: 'Address / Transfer Metadata' },
   { pattern: /(?:^|_)(?:byte_count|length)$/, suffix: 'Length', meaning: (object) => `${object}：给出本次程序读取或图像片段的字节长度。`, groupAlias: 'Address / Transfer Metadata' },
   { pattern: /(?:^|_)(?:data|payload|word_data)$/, suffix: (name) => /word/.test(name) ? 'Program Word Data' : 'Data / Payload', meaning: (object) => `${object}：承载该通道的实际数据内容。`, groupAlias: 'Program Word Payload' },
@@ -82,7 +82,7 @@ function normalizeFallbackGroup(groupName?: string) {
   const lower = groupName?.trim().toLowerCase() ?? ''
   if (/handshake|valid|ready/.test(lower)) return 'Handshake'
   if (/strobe|strb|keep|mask/.test(lower)) return 'Word Strobe / Mask'
-  if (/scope|destination/.test(lower)) return 'Scope / 12-bit Destination / iMEM Address'
+  if (/scope|destination/.test(lower)) return 'Scope / 13-bit Destination / iMEM Address'
   if (/route|target|address|queue/.test(lower)) return 'Address / Transfer Metadata'
   if (/fault|status|control|error/.test(lower)) return 'Control / Status'
   if (/instruction|command|issue/.test(lower)) return 'Command / Instruction'
@@ -135,6 +135,6 @@ export function signalSemanticPresentation(raw: RawConnection, fallbackGroup?: s
 }
 
 export function signalGroupOrder(name: string) {
-  const index = ['Handshake', 'Program Word Payload', 'Word Strobe / Mask', 'Scope / 12-bit Destination / iMEM Address', 'Address / Transfer Metadata', 'Command / Instruction', 'Schedule / Timing', 'Control / Status', 'Legacy Routing / Needs Review', 'Unclassified / Needs Review'].indexOf(name)
+  const index = ['Handshake', 'Program Word Payload', 'Word Strobe / Mask', 'Scope / 13-bit Destination / iMEM Address', 'Address / Transfer Metadata', 'Command / Instruction', 'Schedule / Timing', 'Control / Status', 'Legacy Routing / Needs Review', 'Unclassified / Needs Review'].indexOf(name)
   return index < 0 ? 99 : index
 }

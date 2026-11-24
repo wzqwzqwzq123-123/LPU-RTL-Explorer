@@ -68,19 +68,19 @@
     },
     {
       "semantic_id": "mem-scheduled-macro",
-      "interface_id": "arch:*:mem:interface:macro-queue",
-      "display_name": "Scheduled Macro Instruction",
+      "interface_id": "arch:*:mem:macro:scheduler:interface:direct-issue",
+      "display_name": "Direct MEM64 Issue",
       "classification": "control",
       "confidence": "rtl-confirmed",
-      "evidence": "Macro scheduler output enters the bank timed-queue path."
+      "evidence": "Macro Scheduler mem_issue_valid/instruction/cycle outputs cross the downstream ready/valid boundary directly; no independent MEM Instruction Queue exists."
     },
     {
-      "semantic_id": "mem-timed-queue-issue",
-      "interface_id": "arch:*:mem:interface:queue-selector",
-      "display_name": "Timed Queue Issue",
+      "semantic_id": "mem-direct-adapter-issue",
+      "interface_id": "arch:*:mem:interface:selector-execution",
+      "display_name": "Scheduler to MEM64 / Native32 Adapter",
       "classification": "control",
       "confidence": "rtl-confirmed",
-      "evidence": "Timed queue output enters the issue selector."
+      "evidence": "The selected bank-local Scheduler issue vector enters the matching MEM64 / Native32 adapter lane directly."
     },
     {
       "semantic_id": "mem-fu-issue-vector",

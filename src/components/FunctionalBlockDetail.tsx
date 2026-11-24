@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactFlowInstance, Viewport } from '@xyflow/react'
 import FunctionalConnectivityGraph from './FunctionalConnectivityGraph'
+import MemFunctionalExplorer from './MemFunctionalExplorer'
+import MxmFunctionalExplorer from './MxmFunctionalExplorer'
+import SxmFunctionalExplorer from './SxmFunctionalExplorer'
+import VxmFunctionalExplorer from './VxmFunctionalExplorer'
 import { buildHardwareQuickSpec } from '../lib/hardware-spec'
 import type { ArchitectureDrillInterface, ArchitectureDrillNode, PhysicalFunctionalBlock, PhysicalInterface, RawConnection } from '../types'
 
@@ -72,7 +76,7 @@ export default function FunctionalBlockDetail({ block, nodes, drillInterfaces, p
     return {
       children: baseChildren.flatMap((item) => item.id === macro.id ? macroChildren : [item]),
       interfaces: [
-        ...baseInterfaces.map((item) => item.destinationNodeId === macro.id ? { ...item, destinationNodeId: wordFifo.id, name: 'Fetched Macro Words → Word FIFO' } : item.sourceNodeId === macro.id ? { ...item, sourceNodeId: scheduler.id, name: 'Macro Scheduler → Bank Timed Queue' } : item),
+        ...baseInterfaces.map((item) => item.destinationNodeId === macro.id ? { ...item, destinationNodeId: wordFifo.id, name: 'Fetched Macro Words → Word FIFO' } : item.sourceNodeId === macro.id ? { ...item, sourceNodeId: scheduler.id, name: 'Macro Scheduler → MEM64 / Native32 Adapter' } : item),
         ...drillInterfaces.filter((item) => item.scopeNodeId === macro.id),
       ],
     }
@@ -122,9 +126,30 @@ export default function FunctionalBlockDetail({ block, nodes, drillInterfaces, p
       <div className="drill-zoom" aria-label="画布缩放"><button onClick={() => flowRef.current?.zoomOut()} title="Zoom Out">−</button><span>{Math.round(zoom * 100)}%</span><button onClick={() => flowRef.current?.zoomIn()} title="Zoom In">＋</button><button onClick={() => flowRef.current?.fitView({ padding: .22, maxZoom: .92 })} title="Fit current topology">FIT</button><button onClick={toggleFullscreen} title="全屏架构画布">{fullscreen ? 'EXIT' : '⛶'}</button></div>
     </div>
 
-    <div className="connectivity-canvas-shell">
-      <div className="connectivity-scope-label"><div><span>{levelLabel(current.architectureLevel)} · NODE–EDGE ARCHITECTURE</span><strong>{current.displayName}</strong></div><small>模块 = 节点 · 接口 = 有向边 · 点击节点下钻 · 点击连线进入 Bus Detail</small></div>
-      {children.length ? <FunctionalConnectivityGraph
+    <div className={`connectivity-canvas-shell ${block.kind === 'mem' || block.kind === 'mxm' || block.kind === 'sxm' || block.kind === 'vxm' ? 'custom-explorer-scroll' : 'react-flow-explorer'}`}>
+      {block.kind === 'mem' ? <MemFunctionalExplorer
+        block={block}
+        current={current}
+        nodes={nodeMap}
+        onNavigate={navigate}
+        onSelectNode={onSelectNode}
+      /> : block.kind === 'mxm' ? <MxmFunctionalExplorer
+        block={block}
+        current={current}
+        nodes={nodeMap}
+        onNavigate={navigate}
+        onSelectNode={onSelectNode}
+      /> : block.kind === 'sxm' ? <SxmFunctionalExplorer
+        block={block}
+        current={current}
+        onSelectNode={onSelectNode}
+      /> : block.kind === 'vxm' ? <VxmFunctionalExplorer
+        block={block}
+        current={current}
+        nodes={nodeMap}
+        onNavigate={navigate}
+        onSelectNode={onSelectNode}
+      /> : children.length ? <FunctionalConnectivityGraph
         current={current}
         children={children}
         allNodes={nodeMap}

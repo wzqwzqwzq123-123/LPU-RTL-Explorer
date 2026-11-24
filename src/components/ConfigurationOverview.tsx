@@ -215,9 +215,9 @@ interface SxmFuData extends Record<string, unknown> {
 interface MxmFuData extends Record<string, unknown> {
   name: string
   localIndex: number
-  dotRows: number
-  dotOutputs: number
-  accumulatorBlocks: number
+  supercells: number
+  multipliers: number
+  backendBanks: number
 }
 
 interface VxmFuData extends Record<string, unknown> {
@@ -321,12 +321,10 @@ const MxmFuNode = memo(({ data }: NodeProps<Node<MxmFuData>>) => <article classN
   <FuHandles />
   <header><div><span>MXM</span><strong>{data.name}</strong></div><b>RTL CONFIRMED</b></header>
   <div className="lpu-integrated-strip">PROGRAM LOAD · R6 OUTER LOCAL → MXM ENDPOINT · INTEGRATED</div>
-  <div className="lpu-mxm-frontends">{['LOAD', 'DEQUANT', 'COMPUTE'].map((name) => <span key={name}><strong>{name} FRONTEND</strong><i>↓</i><b>TIMED QUEUE</b></span>)}</div>
-  <div className="lpu-control-arrow">↓ TIMED ISSUE</div>
-  <div className="lpu-mxm-coordinator">LOCAL COORDINATOR</div>
-  <div className="lpu-control-arrow">↓ SELECTED OPERATION</div>
-  <div className="lpu-mxm-execution"><span><b>DOUBLE WEIGHT BUFFER</b><small>4 TILE × 4 BLOCK × 8×8 WEIGHT</small></span><span className="lpu-mxm-compute-confirmed"><b>COMPUTE ARRAY</b><small>{data.dotRows} DOT ROW × 4 BLOCK × 8 OUTPUT</small><em>{data.dotOutputs} FP32 partial outputs / MXM</em></span><span><b>SHARED ACCUMULATOR</b><small>{data.accumulatorBlocks} LOGICAL BLOCK</small></span></div>
-  <footer>MXM local index {data.localIndex} · frontend-to-execution control path is confirmed</footer>
+  <div className="lpu-mxm-frontends">{['LOAD', 'COMPUTE', 'DEQUANT', 'PARAM LOAD', 'BACKEND'].map((name) => <span key={name}><strong>{name} FRONTEND</strong><i>↓</i><b>QCTL → NATIVE PORT</b></span>)}</div>
+  <div className="lpu-control-arrow">↓ DIRECT READY / VALID · NO POST-SCHEDULER INSTRUCTION QUEUE</div>
+  <div className="lpu-mxm-execution"><span><b>4-ROW CONTROL WAVES</b><small>LOAD · COMPUTE · DEQUANT · PARAM</small></span><span className="lpu-mxm-compute-confirmed"><b>4×4 SUPERCELL ARRAY</b><small>{data.supercells} SC · 8 GROUP / SC</small><em>{data.multipliers} BF16 multipliers / MXM</em></span><span><b>COLUMN BACKEND</b><small>{data.backendBanks} LOGICAL 1RW BANKS</small></span></div>
+  <footer>MXM local index {data.localIndex} · five independent ICU streams · shared Decoder architecture, independent state</footer>
 </article>)
 MxmFuNode.displayName = 'MxmFuNode'
 
@@ -346,7 +344,8 @@ const VxmFuNode = memo(({ data }: NodeProps<Node<VxmFuData>>) => {
       <div className="lpu-vxm-matrix"><b>EXECUTION · {data.stages} STAGE × {data.lanes} LANE</b><span style={{ gridTemplateColumns: `repeat(${data.stages}, 1fr)` }}>{Array.from({ length: executionCells }, (_, cell) => <i key={cell} />)}</span></div>
       <div className="lpu-vxm-lut"><b>LUT · {data.lutFunctions} FUNCTION × {data.lanes} LANE</b><span style={{ gridTemplateColumns: `repeat(${data.lanes}, 1fr)` }}>{Array.from({ length: lutCellsPerTile }, (_, cell) => <i key={cell} />)}</span></div>
     </section>)}</div>
-    <footer>{data.tiles * executionCells} Stage-Lane cells / VXM · {data.lutSrams} lane-local LUT SRAMs</footer>
+    <div className="lpu-vxm-resource-detail"><span><b>EXP</b>26 bit × 64</span><span><b>RECIP</b>32 bit × 64</span><span><b>RSQRT</b>32 bit × 64</span><span><b>LOG</b>50 bit × 64</span></div>
+    <footer>{data.tiles} Tiles · {data.tiles * data.lanes} Lanes · {data.tiles * executionCells} ALU positions · {data.lutSrams} logical single-read LUT SRAMs</footer>
   </article>
 })
 VxmFuNode.displayName = 'VxmFuNode'
@@ -392,9 +391,9 @@ function buildLpuTopologyModel(model: ConfigurationOverviewModel) {
     programBoundary: model.programLoad.endpointBoundaries.find((item) => item.id === 'vxm')!,
   }
   const mxmData = {
-    dotRows: unitCount(model, 'mxm', 'mxm-dot-rows', 8),
-    dotOutputs: unitCount(model, 'mxm', 'mxm-dot-outputs', 256),
-    accumulatorBlocks: unitCount(model, 'mxm', 'mxm-accumulators', 32),
+    supercells: unitCount(model, 'mxm', 'mxm-supercells', 16),
+    multipliers: unitCount(model, 'mxm', 'mxm-multipliers', 1024),
+    backendBanks: unitCount(model, 'mxm', 'mxm-backend-banks', 8),
   }
   const nodes: Node[] = [
     { id: 'hemisphere-west', type: 'lpuHemisphereFrame', position: { x: 0, y: 0 }, style: { width: 8500, height: 1100 }, data: { name: 'WEST · UPPER ROW', summary: '2 parallel MXM → SXM → MEM → Central VXM' }, draggable: false, selectable: false, zIndex: -2 },
@@ -483,17 +482,17 @@ function ProgramLoadRelayOverview({ model }: { model: ConfigurationOverviewModel
 function ProgramLoadContract({ model }: { model: ConfigurationOverviewModel }) {
   const contract = model.programLoad
   return <section className="configuration-section program-load-contract">
-    <div className="configuration-section-heading"><div><span>PROGRAM LOAD INTERFACE CONTRACT</span><h2>Control, Scope, 12-bit Destination and ordered commit</h2></div><div className="contract-status">RTL CONFIRMED · WIP CLOSURE</div></div>
-    <p className="configuration-callout">Program Load Control、Scope 和 Destination 都不是 FU 指令编码。Scope 决定单端点或 BOTH 扇出；12-bit Destination 始终只命名一个具体物理目标。当前主路径不存在 Host → MEM SRAM 直连旁路。</p>
+    <div className="configuration-section-heading"><div><span>PROGRAM LOAD INTERFACE CONTRACT</span><h2>Control, Scope, 13-bit Destination and ordered commit</h2></div><div className="contract-status">RTL CONFIRMED · WIP CLOSURE</div></div>
+    <p className="configuration-callout">Program Load Control、Scope 和 Destination 都不是 FU 指令编码。Scope 决定单端点或 BOTH 扇出；13-bit Destination 始终只命名一个具体物理目标。当前主路径不存在 Host → MEM SRAM 直连旁路。</p>
     <div className="program-routing-contract">
       <article className="program-scope-card"><span>PROGRAM SCOPE</span><strong>{contract.routing.scope.widthBits}-bit</strong><div>{contract.routing.scope.values.map((value) => <b key={value.name}>{value.encoding}<small>{value.name}</small></b>)}</div><p>{contract.routing.scope.relationship}</p></article>
       <article className="program-destination-card"><span>PROGRAM DESTINATION</span><strong>{contract.routing.destination.widthBits}-bit</strong><div>{contract.routing.destination.fields.map((field) => <b key={field.name} style={{ flexGrow: field.widthBits }}><small>[{field.bits}]</small>{field.name}<em>{field.widthBits}b</em></b>)}</div><p>{contract.routing.destination.relationship}</p></article>
-      <article className="program-kind-card"><span>DESTINATION FU KIND [10:8]</span><div>{contract.routing.kinds.map((kind) => <b key={kind.name} data-status={kind.status}><small>{kind.encoding}</small>{kind.name}</b>)}</div></article>
+      <article className="program-kind-card"><span>DESTINATION FU KIND [11:8]</span><div>{contract.routing.kinds.map((kind) => <b key={kind.name} data-status={kind.status}><small>{kind.encoding}</small>{kind.name}</b>)}</div></article>
     </div>
     <div className="program-routing-mappings">{contract.routing.mappings.map((mapping) => <article key={mapping.name} data-status={mapping.status}><strong>{mapping.name}</strong><b>{mapping.localIndex}</b><span>{mapping.statement}</span></article>)}</div>
     <p className="configuration-callout program-scope-review"><strong>BOUNDARY NEEDS REVIEW：</strong>{contract.routing.controlSystemBoundary.statement}</p>
     <ProgramLoadRelayOverview model={model} />
-    <section className="program-interface-validation" aria-label="Program Load validation evidence"><header><div><span>VALIDATION EVIDENCE</span><strong>1-bit Control · 165-bit Record · complete 12-bit Destination</strong></div><b>RTL VALIDATED</b></header><p>{contract.validation.scope}</p><div>{contract.validation.results.map((result) => <span key={result}>{result}</span>)}</div><footer>{contract.validation.limitation}</footer></section>
+    <section className="program-interface-validation" aria-label="Program Load validation evidence"><header><div><span>VALIDATION EVIDENCE</span><strong>1-bit Control · 165-bit Record · complete 13-bit Destination</strong></div><b>RTL VALIDATED</b></header><p>{contract.validation.scope}</p><div>{contract.validation.results.map((result) => <span key={result}>{result}</span>)}</div><footer>{contract.validation.limitation}</footer></section>
     <div className="program-contract-flow" aria-label="Program Load contract flow"><article className="contract-card control-domain"><span>CONTROL DOMAIN</span><strong>{contract.controlDomain.widthBits}-bit</strong><div>{contract.controlDomain.values.map((value) => <b key={value}>{value}</b>)}</div><small>{contract.controlDomain.relationship}</small></article><i className="contract-arrow" aria-hidden="true">→</i><article className="contract-card word-transport"><span>PROGRAM WORD</span><strong>{contract.wordTransport.dataBits}-bit</strong><div className="strobe-segments">{Array.from({ length: contract.wordTransport.strobeBits }, (_, index) => <b key={index}>STRB[{index}]<small>{contract.wordTransport.bitsPerStrobe}b</small></b>)}</div><small>{contract.wordTransport.addressBits}-bit iMEM address · {contract.wordTransport.scopeBits}-bit Scope · {contract.wordTransport.destinationBits}-bit Destination · no Sequence ID</small></article><i className="contract-arrow" aria-hidden="true">→</i><div className="contract-destinations">{contract.destinations.map((destination) => <article className={`contract-card destination-${destination.id}`} key={destination.id}><span>{destination.name}</span><strong>{destination.acceptedStrobe}</strong><small>{destination.validPayloadBits} valid payload bits</small><p>{destination.behavior}</p></article>)}</div><i className="contract-return-arrow" aria-hidden="true">←</i><article className="contract-card ordered-commit"><span>ORDERED COMMIT</span><strong>{contract.commit.signals.join(' / ')}</strong><small>{contract.commit.ordering}</small><b>NO SEQUENCE ID</b></article></div>
     <div className="program-contract-reviews">{contract.reviewItems.map((item) => <div key={item.name}><b>VERIFY_REQUIRED</b><strong>{item.name}</strong><span>{item.statement}</span></div>)}</div>
   </section>
@@ -505,13 +504,32 @@ function MemIsaAndQctl({ model }: { model: ConfigurationOverviewModel }) {
     <p className="configuration-callout">The running service loaded an older Configuration model. Restart the local server or rescan RTL to load MEM64 / Native32 and QCTL lane data. Other Configuration sections remain available.</p>
   </section>
   return <section className="configuration-section configuration-control-contracts">
-    <div className="configuration-section-heading"><div><span>MEM ISA &amp; QCTL SYSTEM</span><h2>220 formal endpoints · Pool → Cache → five-state Controller → FU-local Counter</h2></div><b className="configuration-status status-rtl-confirmed">RTL CONFIRMED</b></div>
+    <div className="configuration-section-heading"><div><span>MEM ISA &amp; QCTL DISTRIBUTED STORE</span><h2>Load Manager → East / West 2×7 Relay Stores → {numberText(model.qctl.laneCount)} FU-local Endpoints</h2></div><b className="configuration-status status-rtl-confirmed">RTL CONFIRMED</b></div>
     <div className="mem-isa-contract">
-      <article><span>MEM MACHINE CODE</span><strong>{numberText(model.memIsa.machineCodeBits)}-bit</strong><p>The timed queue stores a {numberText(model.memIsa.queueEntryBits)}-bit entry: 32-bit issue cycle plus the complete MEM64 instruction.</p></article>
+      <article><span>MEM MACHINE CODE</span><strong>{numberText(model.memIsa.machineCodeBits)}-bit</strong><p>The Macro Scheduler directly presents the complete MEM64 instruction and its 32-bit issue cycle to the matching MEM64 / Native32 adapter lane. There is no independent MEM Instruction Queue.</p></article>
       <i>→</i>
       <article><span>MEM64 → NATIVE32 ADAPTER</span><strong>{numberText(model.memIsa.nativeCommandBits)}-bit</strong><p>Native32 is a private execution-control word produced only after legality and implementation checks. It is not a second public ISA.</p></article>
     </div>
     <div className="mem-isa-notes">{model.memIsa.notes.map((item) => <article key={item.name} data-status={item.status}><strong>{item.name}</strong><span>{item.statement}</span></article>)}</div>
+    <div className="qctl-scale-overview" aria-label="QCTL distributed store scale">
+      <article><span>RELAY CHAINS</span><strong>2 × 7</strong><p>East and West each traverse R0–R6.</p></article>
+      <article><span>REGIONAL STORES</span><strong>14</strong><p>{numberText(model.qctl.relayTopology.regionDepth)} Records per Relay by default.</p></article>
+      <article><span>GLOBAL LOGICAL CAPACITY</span><strong>{numberText(model.qctl.relayTopology.globalCapacity)}</strong><p>External Partition/Base/Count/Generation contract is preserved.</p></article>
+      <article><span>FORMAL ENDPOINTS</span><strong>{numberText(model.qctl.laneCount)}</strong><p>208 MEM + 20 MXM; five MXM streams per unit, while VXM/SXM remain outside this map.</p></article>
+    </div>
+    <section className="qctl-relay-topology" aria-label="QCTL East and West relay topology">
+      <header><div><span>LOAD-TIME DISTRIBUTION / RUN-TIME LOCAL READ</span><strong>Central Pool and per-Queue Record Cache are removed</strong></div><b>14 STORES</b></header>
+      <div className="qctl-phase-split">{model.qctl.relayTopology.phases.map((phase) => <article key={phase.id} data-phase={phase.id}><span>{phase.name}</span><strong>{phase.path}</strong><p>{phase.statement}</p></article>)}</div>
+      <div className="qctl-relay-chains">{model.qctl.relayTopology.chains.map((chain) => <section key={chain.id} data-chain={chain.id}>
+        <header><strong>{chain.name}</strong><span>{chain.scope}</span></header>
+        <div>{chain.stages.map((stage, index) => <article key={stage.id} data-relay={stage.id}>
+          {index > 0 && <i aria-hidden="true">→</i>}
+          <b>{stage.name}</b><strong>{stage.queues}</strong><span>{stage.locals}</span>
+        </article>)}</div>
+      </section>)}</div>
+      <div className="qctl-store-contract">{model.qctl.relayTopology.storeContract.map((item) => <article key={item.id} data-store-part={item.id}><strong>{item.name}</strong><p>{item.statement}</p></article>)}</div>
+      <footer>Each regional Store uses a {numberText(model.qctl.relayTopology.transitDepth)}-entry Transit FIFO and limits one Queue to {numberText(model.qctl.relayTopology.queueEntryLimit)} QCTL Records by default.</footer>
+    </section>
     <div className="qctl-system-pipeline" aria-label="QCTL architecture pipeline">{model.qctl.pipeline.map((stage, index) => <div className="qctl-pipeline-stage" key={stage.id} data-stage={stage.id}>
       {index > 0 && <i aria-hidden="true">→</i>}
       <article><span>{stage.name}</span><strong>{numberText(stage.count)}</strong><p>{stage.statement}</p></article>
@@ -545,7 +563,7 @@ function MemArray({ model }: { model: ConfigurationOverviewModel }) {
         <header>GROUP {group}</header>
         <div className="mem-sram-columns">{slices.map((slice) => <div className="mem-sram-column" key={slice} title={`Slice ${group * (detail.columnsPerGroup ?? 0) + slice}`}>{banks.map((bank) => <div className="mem-sram-bank" key={bank}>{leaves.map((leaf) => <i key={leaf} className="mem-sram-slice" title={`G${group} S${slice} B${bank} Superlane${leaf}: ${numberText(detail.leafDepthRows)} × ${numberText(detail.leafWidthBits)} behavioral array`} />)}</div>)}</div>)}</div>
         <div className="mem-bank-flow"><span>↑</span><small>MEM64</small></div>
-        <div className="mem-bank-issue-pairs">{slices.flatMap((slice) => banks.map((bank) => <div className="mem-bank-issue-pair" key={`${slice}-${bank}`} title={`Group ${group}, Slice ${slice}, Bank ${bank}: paired local instruction frontend and bank timed queue`} data-local-issue-pair="true"><b>F</b><i>+</i><b>Q</b></div>))}</div>
+        <div className="mem-bank-issue-pairs">{slices.flatMap((slice) => banks.map((bank) => <div className="mem-bank-issue-pair" key={`${slice}-${bank}`} title={`Group ${group}, Slice ${slice}, Bank ${bank}: local frontend with direct Scheduler issue`} data-local-issue-pair="true"><b>F</b><i>→</i><b>D</b></div>))}</div>
       </div>)}
     </div>
     <div className="mem-slice-proof"><div><span>Native leaf implementation</span><strong>{numberText(detail.leafWidthBits)}-bit × {numberText(detail.leafDepthRows)} rows</strong><p>{detail.leafImplementation}</p></div><code>52 slices × 2 banks × 4 superlanes = {numberText(detail.leafSramsPerMem)} leaves / MEM</code></div>

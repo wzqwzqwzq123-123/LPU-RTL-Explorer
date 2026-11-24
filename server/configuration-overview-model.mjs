@@ -84,9 +84,14 @@ export function buildConfigurationOverviewModel(snapshot, physicalArchitecture) 
   const streamsPerDirection = resolved(globalParameter(snapshot, 'STREAMS_PER_DIRECTION', pkg), null, 'STREAMS_PER_DIRECTION')
   const useSramMacroParameter = moduleParameter(snapshot, 'lpu_top', 'USE_SRAM_MACRO')
   const qctlParameter = moduleParameter(snapshot, 'lpu_top', 'ENABLE_QCTL')
-  const qctlQueueCount = resolved(moduleParameter(snapshot, 'lpu_top', 'QCTL_QUEUE_COUNT'), null, 'QCTL_QUEUE_COUNT')
-  const qctlCacheDepth = resolved(moduleParameter(snapshot, 'lpu_qctl_system', 'CACHE_DEPTH'), null, 'lpu_qctl_system.CACHE_DEPTH')
-  const qctlEventDepth = resolved(moduleParameter(snapshot, 'lpu_qctl_system', 'EVENT_DEPTH'), null, 'lpu_qctl_system.EVENT_DEPTH')
+  const qctlQueueCount = resolved(moduleParameter(snapshot, 'lpu_top', 'QCTL_QUEUE_COUNT'), globalParameter(snapshot, 'QCTL_QUEUE_COUNT', 'rtl/icu/lpu_qctl_pkg.sv'), 'QCTL_QUEUE_COUNT')
+  const qctlTotalCapacity = resolved(moduleParameter(snapshot, 'lpu_qctl_global_subsystem', 'TOTAL_CAPACITY'), null, 'lpu_qctl_global_subsystem.TOTAL_CAPACITY')
+  const qctlRegionDepth = resolved(moduleParameter(snapshot, 'lpu_qctl_global_subsystem', 'REGION_DEPTH'), null, 'lpu_qctl_global_subsystem.REGION_DEPTH')
+  const qctlRelayBufferDepth = resolved(moduleParameter(snapshot, 'lpu_qctl_global_subsystem', 'RELAY_BUFFER_DEPTH'), null, 'lpu_qctl_global_subsystem.RELAY_BUFFER_DEPTH')
+  const qctlQueueEntryLimit = resolved(moduleParameter(snapshot, 'lpu_qctl_global_subsystem', 'QUEUE_ENTRY_LIMIT'), null, 'lpu_qctl_global_subsystem.QUEUE_ENTRY_LIMIT')
+  const qctlRelayCount = resolved(globalParameter(snapshot, 'QCTL_RELAY_COUNT', 'rtl/icu/lpu_qctl_pkg.sv'), null, 'QCTL_RELAY_COUNT')
+  const qctlRelayCountPerHemisphere = resolved(globalParameter(snapshot, 'QCTL_RELAY_COUNT_PER_HEMISPHERE', 'rtl/icu/lpu_qctl_pkg.sv'), null, 'QCTL_RELAY_COUNT_PER_HEMISPHERE')
+  const qctlEventDepth = resolved(moduleParameter(snapshot, 'lpu_qctl_global_subsystem', 'EVENT_DEPTH'), null, 'lpu_qctl_global_subsystem.EVENT_DEPTH')
   const useNativeMemParameter = moduleParameter(snapshot, 'lpu_top', 'USE_NATIVE_MEM')
   const relayDefinition = snapshot.modules?.find((item) => item.name === 'lpu_program_distribute_relay')
   const relayChainDefinition = snapshot.modules?.find((item) => item.name === 'lpu_program_distribute_relay_chain')
@@ -140,12 +145,10 @@ export function buildConfigurationOverviewModel(snapshot, physicalArchitecture) 
   const localControlDomains = [memCount, mxmTotal, sxmTotal, vxmTotal].every(Number.isFinite)
     ? memCount + mxmTotal + sxmTotal + vxmTotal
     : null
-  const memLocalQueuesSystem = multiply(memCount, frontendCount)
-  const mxmLocalQueuesSystem = multiply(mxmTotal, 3)
-  const confirmedLocalQueues = [memLocalQueuesSystem, mxmLocalQueuesSystem].every(Number.isFinite)
-    ? memLocalQueuesSystem + mxmLocalQueuesSystem
-    : null
-  const queueEntryBits = Number.isFinite(memInstructionWidth.value) ? 32 + memInstructionWidth.value : null
+  const memLocalIssuePathsSystem = multiply(memCount, frontendCount)
+  const mxmLocalStreamsSystem = multiply(mxmTotal, 5)
+  const confirmedLocalStreams = mxmLocalStreamsSystem
+  const queueEntryBits = null
   const leafSramsPerBank = tileRows.value
   const leafSramsPerMem = multiply(banksPerMem, leafSramsPerBank)
   const leafSramsSystem = multiply(leafSramsPerMem, memCount)
@@ -189,11 +192,12 @@ export function buildConfigurationOverviewModel(snapshot, physicalArchitecture) 
     { id: 'mxm', label: 'MXM', total: mxmTotal, perHemisphere: Number.isFinite(mxmTotal) && Number.isFinite(hemispheres.value) ? mxmTotal / hemispheres.value : null, availability: 'Enabled', status: mxmCount.evidence.status, evidence: [mxmCount.evidence] },
     { id: 'vxm', label: 'VXM', total: vxmTotal, perHemisphere: null, availability: 'Enabled', status: 'rtl-confirmed', evidence: [instanceSource(snapshot, 'lpu_fu_subsystem_cluster', 'u_vxm_subsystem', 'u_vxm_subsystem', 'single central VXM subsystem')] },
     { id: 'fu-control', label: 'FU-local Control Domains', total: localControlDomains, perHemisphere: null, availability: 'Distributed', status: 'architecture-inferred', evidence: [instanceSource(snapshot, 'lpu_fu_subsystem_cluster', 'gen_hemisphere', 'FU-local subsystem control', 'MEM, MXM and SXM are organized per hemisphere; VXM is a single central subsystem')] },
-    { id: 'local-queue', label: 'FU-local Timed Queues', total: confirmedLocalQueues, perHemisphere: Number.isFinite(confirmedLocalQueues) && Number.isFinite(hemispheres.value) ? confirmedLocalQueues / hemispheres.value : null, availability: '208 MEM + 12 MXM', status: 'rtl-confirmed', evidence: [instanceSource(snapshot, 'lpu_mem_subsystem', 'u_timed_queue', 'MEM local timed queues', '104 per MEM'), instanceSource(snapshot, 'lpu_mxm_subsystem', 'u_load_timed_queue', 'MXM local timed queues', '3 per MXM')] },
-    { id: 'mem-bank-queue', label: 'MEM Bank-local Queues', total: multiply(memCount, banksPerMem), perHemisphere: banksPerMem, availability: 'Global 0..207 → local 0..103', status: 'rtl-confirmed', evidence: [memBankCount.evidence, instanceSource(snapshot, 'lpu_mem_subsystem', 'u_timed_queue', 'MEM bank-local queue generate', '104 per hemisphere')] },
+    { id: 'local-queue', label: 'MXM FU-local Stream Paths', total: confirmedLocalStreams, perHemisphere: Number.isFinite(confirmedLocalStreams) && Number.isFinite(hemispheres.value) ? confirmedLocalStreams / hemispheres.value : null, availability: '20 MXM streams · direct native-port issue', status: 'rtl-confirmed', evidence: [instanceSource(snapshot, 'lpu_mxm_subsystem', 'gen_frontend', 'five generated MXM local frontends', '5 per MXM'), source('rtl/mxm/icu/lpu_mxm_macro_frontend.sv', 1, 'lpu_mxm_macro_frontend', 'Macro Scheduler drives the native command ready/valid boundary directly; no post-Scheduler Instruction Queue')] },
+    { id: 'mem-bank-queue', label: 'MEM Bank-local Direct Issue Paths', total: memLocalIssuePathsSystem, perHemisphere: banksPerMem, availability: 'Global 0..207 → local 0..103', status: 'rtl-confirmed', evidence: [memBankCount.evidence, source('rtl/mem/lpu_mem_subsystem.sv', 192, 'gen_bank_frontend[*].u_frontend', '104 bank-local Frontends per hemisphere; Scheduler outputs feed the lane adapter directly')] },
     { id: 'program-load-relay', label: 'Program Load Relay Stages', total: relayTotalStages, perHemisphere: relayCountPerHemisphere, availability: relayIntegrated ? 'Integrated' : 'Needs Review', status: relayIntegrated ? 'rtl-confirmed' : 'needs-review', evidence: [source(distributionNetworkDefinition?.file ?? 'rtl/program_load/lpu_program_distribute_system.sv', distributionNetworkDefinition?.instances?.find((item) => item.moduleName === 'lpu_program_distribute_relay_chain')?.line ?? 255, 'gen_relay_chain[0:1].u_program_relay_chain', 'Distribution System instantiates East + West chains and each chain generates seven Relay stages', relayIntegrated ? 'rtl-confirmed' : 'needs-review'), source('handoff/latest-rtl-change.md', 1, 'Relay-local Program Port handoff', '14 Distribution handshakes and one-Hemisphere seven-way iMEM writes verified', 'rtl-confirmed')] },
     { id: 'mem-local-program-port', label: 'MEM Local Program Ports', total: relayTotalStages, perHemisphere: relayCountPerHemisphere, availability: 'Independent Valid / Ready', status: relayIntegrated ? 'rtl-confirmed' : 'needs-review', evidence: [source('rtl/program_load/lpu_program_distribute_system.sv', 18, 'mem_program_*', 'PROGRAM_RELAY_PORT_COUNT independent MEM Program ports', relayIntegrated ? 'rtl-confirmed' : 'needs-review'), source('rtl/mem/lpu_mem_subsystem.sv', 23, 'program_valid_i / program_ready_o', 'PROGRAM_PORT_COUNT independent MEM Subsystem ports', relayIntegrated ? 'rtl-confirmed' : 'needs-review')] },
-    { id: 'qctl', label: 'QCTL Formal Endpoints', total: qctlQueueCount.value, perHemisphere: null, availability: qctl.value === 1 ? 'Enabled' : 'RTL Integrated · Default Gated', status: 'rtl-confirmed', evidence: [qctl.evidence, qctlQueueCount.evidence, instanceSource(snapshot, 'lpu_fu_subsystem_cluster', 'u_qctl_system', 'gen_qctl.u_qctl_system', 'one generated lpu_qctl_system with 220 Queue endpoints')] },
+    { id: 'qctl', label: 'QCTL Formal Endpoints', total: qctlQueueCount.value, perHemisphere: null, availability: qctl.value === 1 ? 'Enabled' : 'RTL Integrated · Default Gated', status: 'rtl-confirmed', evidence: [qctl.evidence, qctlQueueCount.evidence, instanceSource(snapshot, 'lpu_fu_subsystem_cluster', 'u_qctl_global_subsystem', 'gen_qctl.u_qctl_global_subsystem', 'distributed QCTL store plus 228 FU-local endpoints')] },
+    { id: 'qctl-relay-store', label: 'QCTL Regional Relay Stores', total: qctlRelayCount.value, perHemisphere: qctlRelayCountPerHemisphere.value, availability: 'East / West Distributed', status: 'rtl-confirmed', evidence: [qctlRelayCount.evidence, instanceSource(snapshot, 'lpu_qctl_global_subsystem', 'u_east_relay_chain', 'East / West QCTL Relay chains', 'two chains, seven regional stores per hemisphere')] },
   ]
 
   const compositions = [
@@ -204,7 +208,7 @@ export function buildConfigurationOverviewModel(snapshot, physicalArchitecture) 
         unit('mem-columns', 'Native Slices / MEM', 'slice', 'structure', columnsPerMem, memColumns.expression, memColumns.evidence),
         unit('mem-banks', 'Banks / MEM', 'bank', 'storage', banksPerMem, `${columnsPerMem} columns × ${banksPerColumn.value} banks`, banksPerColumn.evidence),
         unit('mem-slices', 'Native SRAM Leaves / MEM', 'sram-leaf', 'storage', leafSramsPerMem, `${columnsPerMem} slices × ${banksPerColumn.value} banks × ${leafSramsPerBank} superlanes`, source('rtl/mem_native/mem_slice.sv', 1, 'mem_slice', '2 independent banks × 4 superlane SRAM leaves')), 
-        unit('mem-local-issue-paths', 'Local Instruction Frontend + Timed Queue', 'frontend-queue-pair', 'buffer', frontendCount, 'ACTIVE_COLUMNS × BANKS; one paired frontend/queue path per logical Bank', source('rtl/mem/lpu_mem_subsystem.sv', 126, 'gen_bank_frontend[*]', 'u_frontend directly enqueues u_timed_queue for the same bank-local lane'), 'rtl-confirmed', 'The local iMEM frontend, macro decode/scheduler and 96-bit timed queue form one bank-local instruction-supply path. They are displayed together south of the Native SRAM bank array.'),
+        unit('mem-local-issue-paths', 'Bank-local Macro Frontend + Direct Issue', 'frontend-direct-issue', 'control', frontendCount, 'ACTIVE_COLUMNS × BANKS; one Frontend and direct Scheduler issue path per logical Bank', source('rtl/mem/lpu_mem_subsystem.sv', 192, 'gen_bank_frontend[*]', 'u_frontend mem_issue_* feeds the matching adapter lane directly'), 'rtl-confirmed', 'Local iMEM, Macro Decoder, Context FIFO and Macro Scheduler form one bank-local instruction-supply path. The Scheduler directly emits MEM64 plus issue cycle; no independent Instruction Queue exists.'),
         unit('mem-native-adapters', 'MEM64 → Native32 Adapters', 'adapter', 'interface', frontendCount, 'one adapter per bank-local issue lane', source('rtl/integration/lpu_mem_srf_command_integration.sv', 1, 'lpu_mem_srf_command_integration', '104 lane adapters / MEM')),
         unit(
           'mem-stream-registers',
@@ -225,19 +229,16 @@ export function buildConfigurationOverviewModel(snapshot, physicalArchitecture) 
     {
       id: 'mxm', name: 'MXM', fu: 'mxm', instanceCount: mxmTotal, status: 'rtl-confirmed', evidence: [mxmCount.evidence],
       units: [
-        unit('mxm-local-issue-paths', 'Local Frontend + Timed Queue Paths', 'frontend-queue-pair', 'buffer', 3, 'Load + Dequant + Compute paired issue paths', source('rtl/mxm/lpu_mxm_subsystem.sv', 1, 'load/dequant/compute frontend + timed queue', 'Three local macro frontends directly feed their corresponding timed queues'), 'rtl-confirmed', 'Load, Dequant and Compute each retain one local frontend/queue pair before local coordination.'),
-        unit('mxm-coordinator', 'Local Coordinator', 'coordinator', 'control', 1, 'one coordinator / MXM', instanceSource(snapshot, 'lpu_mxm_subsystem', 'u_coordinator', 'u_coordinator', 'single coordinator')),
-        unit('mxm-control-wave', 'Four-row Execution Control Wave', 'control-wave', 'control', 1, 'one execution controller / MXM', instanceSource(snapshot, 'lpu_mxm_slice', 'u_control', 'u_control', 'load / dequant / compute commands propagate across four rows'), 'rtl-confirmed', 'The current execution slice expands Load, Dequant and Compute commands across four physical rows.'),
-        unit('mxm-weight-buffer', 'Double-buffered Weight Store', 'weight-buffer', 'storage', 2, '2 buffers × 4 tiles × 4 blocks × 8 lanes × 8 columns', instanceSource(snapshot, 'lpu_mxm_slice', 'u_weight_buffer', 'u_weight_buffer', 'one double-buffered weight store / MXM')),
-        unit('mxm-dequantizers', 'Tile Dequantizers', 'dequantizer', 'compute', 4, 'one generated dequantizer / tile', source('rtl/mxm/lpu_mxm_weight_buffer.sv', 28, 'gen_dequant[0:3].u_dequantizer', 'four tile-local dequantizers')),
-        unit('mxm-tiles', 'Compute Tiles', 'tile', 'compute', 4, 'TILES = 4', source('rtl/mxm/lpu_mxm_compute.sv', 27, 'TILES', 'localparam integer TILES = 4')),
-        unit('mxm-blocks', 'Compute Blocks', 'block', 'compute', 16, '4 tiles × 4 blocks', source('rtl/mxm/lpu_mxm_compute.sv', 28, 'BLOCKS', 'localparam integer BLOCKS = 4')),
-        unit('mxm-lanes', 'Lanes / Block', 'lane', 'compute', lanesPerTile.value, lanesPerTile.expression, lanesPerTile.evidence),
-        unit('mxm-dot-rows', 'Dot Rows / MXM', 'dot-row', 'compute', mxmDotRows, activeDefines.includes('FTLPU_DISABLE_BLOCK8') ? 'FTLPU_DISABLE_BLOCK8 → 1' : 'default branch → 8', source('rtl/mxm/lpu_mxm_compute.sv', 31, 'DOT_ROWS', '`ifdef FTLPU_DISABLE_BLOCK8: 1; default: 8'), 'rtl-confirmed', 'Each generated row owns one lpu_mxm_dot_bank.'),
-        unit('mxm-dot-outputs', 'Dot Outputs / MXM', 'dot-output', 'compute', mxmDotRows * 4 * 8, `${mxmDotRows} rows × 4 blocks × 8 columns`, source('rtl/mxm/lpu_mxm_dot_bank.sv', 29, 'block/column loops', '32 FP32 dot outputs per generated row')),
-        unit('mxm-shared-accumulator', 'Shared Accumulator Backend', 'accumulator-backend', 'storage', 1, 'one shared backend / MXM', instanceSource(snapshot, 'lpu_mxm_slice', 'u_accumulator', 'u_accumulator', 'shared vector/block accumulator backend'), 'rtl-confirmed', mxmAccumulatorMacroActive ? 'FTLPU_USE_SRAM128X512_MACRO selects 8 row banks backed by 16 physical SRAM halves.' : 'Current snapshot uses the cycle-compatible behavioral vector + block reference branch; the 8-bank SRAM macro backend is conditional.'),
-        unit('mxm-accumulators', 'Accumulator Blocks', 'accumulator', 'buffer', mxmAccumulatorBlocks.value, mxmAccumulatorBlocks.expression, mxmAccumulatorBlocks.evidence),
-        unit('mxm-accumulator-rows', 'Vector Accumulator Rows', 'accumulator-row', 'storage', multiply(mxmAccumulatorBlocks.value, 32), `${mxmAccumulatorBlocks.value} blocks × 32 rows`, source('rtl/mxm/lpu_mxm_accumulator.sv', 26, 'DEPTH', 'ACCUMULATOR_BLOCK_COUNT * 32')),
+        unit('mxm-local-stream-paths', 'Five FU-local Macro Frontend Paths', 'frontend-direct-issue', 'control', 5, 'Load + Compute + Dequant + Param Load + Backend', source('rtl/mxm/lpu_mxm_subsystem.sv', 1, 'gen_frontend[0:4]', 'Five generated stream-local Frontends'), 'rtl-confirmed', 'Each stream owns local iMEM, Fetch, Word FIFO, an independent instance of the shared Decoder architecture, Context FIFO and stream-specific Scheduler.'),
+        unit('mxm-shared-decoder', 'Shared 12-State Decoder Architecture', 'decoder', 'control', 1, 'one RTL architecture × five independent instances', source('rtl/mxm/icu/lpu_mxm_macro_decoder_core.sv', 1, 'lpu_mxm_macro_decoder_core', 'shared decoder implementation instantiated once per stream')),
+        unit('mxm-qctl-gates', 'QCTL Endpoint Gates / MXM', 'qctl-gate', 'control', 5, 'one formal QCTL endpoint per stream', source('rtl/mxm/lpu_mxm_subsystem.sv', 1, 'gen_qctl_endpoint[0:4]', 'five generated QCTL endpoint/controller/counter paths')),
+        unit('mxm-native-ports', 'Native Command Ports / MXM', 'native-port', 'interface', 5, 'Scheduler ready/valid directly drives the matching native port', source('rtl/mxm/lpu_mxm_subsystem.sv', 1, 'frontend_issue_*', 'no post-Scheduler Issue Queue and no Local Coordinator')),
+        unit('mxm-control-wave', 'Four-row Execution Control Wave', 'control-wave', 'control', 4, 'Compute + Load + Param Load + Dequant', source('rtl/mxm/lpu_mxm_frontend.sv', 1, 'control streams', 'four execution-side command waves; Backend uses its native backend port')),
+        unit('mxm-supercells', '4×4 Supercell Array', 'supercell', 'compute', 16, 'SC_ROWS × SC_COLS = 4 × 4', source('rtl/mxm/lpu_mxm_frontend.sv', 1, 'generated supercell array', 'sixteen current-core Supercells')),
+        unit('mxm-dot-groups', 'BF16 Dot Groups / MXM', 'dot-group', 'compute', 128, '16 Supercells × 8 groups', source('rtl/mxm/lpu_mxm_supercell.sv', 1, 'g_output[0:7]', 'eight dot/partial groups per Supercell')),
+        unit('mxm-multipliers', 'BF16 Multipliers / MXM', 'multiplier', 'compute', 1024, '16 Supercells × 8 groups × 8 multipliers', source('rtl/mxm/lpu_mxm_config_pkg.sv', 1, 'MULTIPLIER_COUNT', 'current parameterized Core multiplier count')),
+        unit('mxm-backend-columns', 'Backend Columns', 'backend-column', 'compute', 4, 'SC_COLS = 4', source('rtl/mxm/lpu_mxm_backend.sv', 1, 'g_column[0:3]', 'four independent accumulator columns')),
+        unit('mxm-backend-banks', 'Logical Accumulator Banks', 'accumulator-bank', 'storage', 8, '4 columns × 2 logical 1RW banks', source('rtl/mxm/lpu_mxm_backend_column.sv', 1, 'two banks per column', 'eight logical 512×256-bit banks')),
       ],
     },
     {
@@ -277,13 +278,13 @@ export function buildConfigurationOverviewModel(snapshot, physicalArchitecture) 
       ],
     },
     {
-      id: 'instruction', name: 'Distributed FU-local Instruction Control', fu: 'control', instanceCount: localControlDomains, status: 'architecture-inferred', evidence: [instanceSource(snapshot, 'lpu_mem_subsystem', 'u_frontend', 'MEM FU-local control', 'local iMEM frontend + macro decode + timed queue'), instanceSource(snapshot, 'lpu_mxm_subsystem', 'u_load_frontend', 'MXM FU-local control', 'three local macro frontends + timed queues')],
+      id: 'instruction', name: 'Distributed FU-local Instruction Control', fu: 'control', instanceCount: localControlDomains, status: 'architecture-inferred', evidence: [instanceSource(snapshot, 'lpu_mem_subsystem', 'u_frontend', 'MEM FU-local control', 'local iMEM frontend + macro decode + direct issue'), instanceSource(snapshot, 'lpu_mxm_subsystem', 'gen_frontend', 'MXM FU-local control', 'five local macro frontends + direct native-port issue')],
       units: [
-        unit('distributed-mem-issue-paths', 'MEM Bank-local Frontend + Queue Paths', 'frontend-queue-pair', 'buffer', memLocalQueuesSystem, `${memCount} MEM × ${frontendCount} paired bank-local paths`, source('rtl/mem/lpu_mem_subsystem.sv', 126, 'gen_bank_frontend[*]', '208 system-wide paired frontend/timed-queue lanes')),
-        unit('distributed-mxm-issue-paths', 'MXM Local Frontend + Queue Paths', 'frontend-queue-pair', 'buffer', mxmLocalQueuesSystem, `${mxmTotal} MXM × 3 paired local paths`, source('rtl/mxm/lpu_mxm_subsystem.sv', 1, 'local frontend/queue paths', '12 system-wide paired MXM issue paths')),
+        unit('distributed-mem-issue-paths', 'MEM Bank-local Frontend + Direct Issue Paths', 'frontend-direct-issue', 'control', memLocalIssuePathsSystem, `${memCount} MEM × ${frontendCount} bank-local paths`, source('rtl/mem/lpu_mem_subsystem.sv', 192, 'gen_bank_frontend[*]', '208 system-wide bank-local Scheduler-to-adapter lanes; no independent Instruction Queue')),
+        unit('distributed-mxm-issue-paths', 'MXM Local Frontend + Direct Native Paths', 'frontend-direct-issue', 'control', mxmLocalStreamsSystem, `${mxmTotal} MXM × 5 stream-local paths`, source('rtl/mxm/lpu_mxm_subsystem.sv', 1, 'gen_frontend[0:4]', '20 system-wide MXM stream paths with no post-Scheduler queue')),
         unit('distributed-sxm-control', 'SXM Local Control Domains', 'local-control', 'control', sxmTotal, `${sxmTotal} SXM subsystems`, instanceSource(snapshot, 'lpu_sxm_subsystem', 'u_slice', 'SXM local issue/control', 'Program Load closure remains VERIFY_REQUIRED'), 'needs-review', 'Program Load to local instruction storage is not confirmed in the current cluster routing.'),
         unit('distributed-vxm-control', 'VXM Local Control Domain', 'local-control', 'control', vxmTotal, 'single central VXM subsystem', instanceSource(snapshot, 'lpu_vxm_subsystem', 'u_slice', 'VXM local/global issue control', 'Program Load closure remains VERIFY_REQUIRED'), 'needs-review', 'Program Load to local instruction storage is not confirmed in the current cluster routing.'),
-        unit('distributed-qctl', 'QCTL Formal Endpoint Map · 220', 'queue-control-system', 'control', qctlQueueCount.value, qctlQueueCount.expression, qctlQueueCount.evidence, 'rtl-confirmed', 'MEM 0..207 and MXM Load / Dequant / Compute 208..219 are formal endpoints generated inside lpu_qctl_system. VXM and SXM have no formal QCTL Queue number or Controller chain in the current RTL.'),
+        unit('distributed-qctl', 'QCTL Distributed Relay Store · 228', 'queue-control-system', 'control', qctlQueueCount.value, qctlQueueCount.expression, qctlQueueCount.evidence, 'rtl-confirmed', 'MEM 0..207 and five MXM stream classes 208..227 read their QCTL records from fourteen regional Relay stores. VXM and SXM have no formal QCTL Queue number or Controller chain in the current RTL.'),
       ],
     },
   ]
@@ -301,14 +302,15 @@ export function buildConfigurationOverviewModel(snapshot, physicalArchitecture) 
       ],
     },
     mxm: {
-      tiers: [['mxm-local-issue-paths'], ['mxm-coordinator', 'mxm-control-wave'], ['mxm-weight-buffer', 'mxm-dequantizers'], ['mxm-tiles', 'mxm-dot-rows'], ['mxm-blocks', 'mxm-lanes', 'mxm-dot-outputs'], ['mxm-shared-accumulator', 'mxm-accumulators', 'mxm-accumulator-rows']],
+      tiers: [['mxm-local-stream-paths'], ['mxm-shared-decoder'], ['mxm-qctl-gates', 'mxm-native-ports'], ['mxm-control-wave'], ['mxm-supercells'], ['mxm-dot-groups', 'mxm-multipliers'], ['mxm-backend-columns', 'mxm-backend-banks']],
       links: [
-        ['mxm-local-issue-paths', 'mxm-coordinator', 'Load / Dequant / Compute timed issue'],
-        ['mxm-coordinator', 'mxm-control-wave', 'Accepted issue'],
-        ['mxm-control-wave', 'mxm-weight-buffer', 'Load / Dequant row control'],
-        ['mxm-control-wave', 'mxm-tiles', 'Compute row control'],
-        ['mxm-weight-buffer', 'mxm-tiles', 'BF16 / FP16 weights'],
-        ['mxm-tiles', 'mxm-shared-accumulator', '8 × 32 FP32 partial results'],
+        ['mxm-local-stream-paths', 'mxm-shared-decoder', 'five independent Decoder instances'],
+        ['mxm-shared-decoder', 'mxm-qctl-gates', 'Context → stream Scheduler → QCTL gate'],
+        ['mxm-qctl-gates', 'mxm-native-ports', 'direct ready / valid · no Issue Queue'],
+        ['mxm-native-ports', 'mxm-control-wave', 'Load / Compute / Dequant / Param Load commands'],
+        ['mxm-control-wave', 'mxm-supercells', 'fixed four-row execution waves'],
+        ['mxm-supercells', 'mxm-dot-groups', '8 groups per Supercell'],
+        ['mxm-dot-groups', 'mxm-backend-columns', 'static result return'],
       ],
     },
     sxm: {
@@ -339,7 +341,7 @@ export function buildConfigurationOverviewModel(snapshot, physicalArchitecture) 
       tiers: [['distributed-mem-issue-paths', 'distributed-mxm-issue-paths'], ['distributed-sxm-control', 'distributed-vxm-control'], ['distributed-qctl']],
       links: [
         ['distributed-mem-issue-paths', 'distributed-qctl', 'Optional MEM lane map · 0..207'],
-        ['distributed-mxm-issue-paths', 'distributed-qctl', 'Optional MXM lane map · 208..219'],
+        ['distributed-mxm-issue-paths', 'distributed-qctl', 'Optional MXM lane map · 208..227'],
       ],
     },
   }
@@ -370,7 +372,7 @@ export function buildConfigurationOverviewModel(snapshot, physicalArchitecture) 
       instanceCount: frontendCount,
       status: 'rtl-confirmed',
       integration: 'Integrated · one bank-local path per MEM Bank',
-      summary: 'Program words are stored in a Bank-local iMEM, fetched into a Word FIFO, macro-decoded and scheduled before entering the matching Bank Timed Queue.',
+      summary: 'Program words are stored in a Bank-local iMEM, fetched into a Word FIFO, macro-decoded and scheduled. The Scheduler then drives MEM64 plus issue cycle directly into the matching adapter lane.',
       variants: [{
         id: 'mem-bank',
         name: 'Bank-local Macro Frontend',
@@ -382,25 +384,26 @@ export function buildConfigurationOverviewModel(snapshot, physicalArchitecture) 
           stage('mem-word-fifo', 'Word FIFO', 'Absorbs iMEM latency', 'rtl/mem/lpu_mem_macro_frontend.sv', 83, 'u_word_fifo', 'lpu_queue_fifo'),
           stage('mem-decoder', 'MEM Macro Decoder', '12-state architectural FSM · Queue-driven IDLE completion', 'rtl/mem/lpu_mem_macro_frontend.sv', 98, 'u_decoder', 'lpu_mem_macro_decoder'),
           stage('mem-context-fifo', 'Context FIFO', 'Decouples decode from admission', 'rtl/mem/lpu_mem_macro_frontend.sv', 130, 'u_context_fifo', 'lpu_queue_fifo'),
-          stage('mem-scheduler', 'MEM Macro Scheduler', 'Expands Context into timed base instructions', 'rtl/mem/lpu_mem_macro_frontend.sv', 146, 'u_scheduler', 'lpu_mem_macro_scheduler'),
-          stage('mem-timed-queue', 'Frontend Instruction Queue', 'Final sequential stage inside each MEM Frontend', 'rtl/mem/lpu_mem_local_imem_frontend.sv', 217, 'u_instruction_queue', 'lpu_mem_instruction_queue'),
+          stage('mem-scheduler', 'MEM Macro Scheduler', 'Expands Context and directly emits MEM64 plus issue cycle', 'rtl/mem/lpu_mem_macro_frontend.sv', 146, 'u_scheduler', 'lpu_mem_macro_scheduler'),
         ],
       }],
-      evidence: [source('rtl/mem/lpu_mem_subsystem.sv', 163, 'gen_bank_frontend[*].u_frontend', 'one complete bank-local Frontend per logical MEM Bank'), source('rtl/mem/lpu_mem_local_imem_frontend.sv', 217, 'u_instruction_queue', 'Instruction Queue is the final stage inside each Frontend')],
+      evidence: [source('rtl/mem/lpu_mem_subsystem.sv', 192, 'gen_bank_frontend[*].u_frontend', 'one complete bank-local Frontend per logical MEM Bank'), source('rtl/mem/lpu_mem_local_imem_frontend.sv', 170, 'u_macro_frontend mem_issue_*', 'Macro Scheduler output is the terminal instruction-generation boundary and feeds the subsystem lane directly')],
     },
     {
       id: 'mxm',
       label: 'MXM Frontend',
       fu: 'mxm',
-      instanceCount: 3,
+      instanceCount: 5,
       status: 'rtl-confirmed',
-      integration: 'Integrated · Load / Dequant / Compute paths',
-      summary: 'Each MXM owns three independent FU-local program paths. Every path has local iMEM and a queue-kind-specific macro decoder before its paired Timed Queue.',
+      integration: 'Integrated · Load / Compute / Dequant / Param Load / Backend',
+      summary: 'Each MXM owns five independent FU-local program streams. Every stream instantiates the shared 12-state Decoder architecture and a stream-specific Scheduler; the Scheduler then drives its matching native command port directly through QCTL endpoint gating.',
       variants: [
-        ['load', 'Load Frontend', 'lpu_mxm_load_macro_decoder', 105, 'lpu_mxm_load_macro_scheduler', 153, 239],
-        ['dequant', 'Dequant Frontend', 'lpu_mxm_dequant_macro_decoder', 103, 'lpu_mxm_dequant_macro_scheduler', 150, 249],
-        ['compute', 'Compute Frontend', 'lpu_mxm_compute_macro_decoder', 106, 'lpu_mxm_compute_macro_scheduler', 156, 259],
-      ].map(([id, name, decoder, decoderLine, scheduler, schedulerLine, queueLine]) => ({
+        ['load', 'Load Frontend'],
+        ['compute', 'Compute Frontend'],
+        ['dequant', 'Dequant Frontend'],
+        ['param-load', 'Param Load Frontend'],
+        ['backend', 'Backend Frontend'],
+      ].map(([id, name]) => ({
         id,
         name,
         count: 1,
@@ -408,14 +411,15 @@ export function buildConfigurationOverviewModel(snapshot, physicalArchitecture) 
         stages: [
           stage(`${id}-imem`, 'Local iMEM', 'FU-local program storage', 'rtl/mxm/lpu_mxm_local_imem_frontend.sv', 122, 'u_imem', 'lpu_mxm_local_imem'),
           stage(`${id}-fetch`, 'iMEM Fetch', 'Committed-word fetch and program counter', 'rtl/mxm/lpu_mxm_local_imem_frontend.sv', 147, 'u_fetch', 'lpu_mxm_imem_fetch'),
-          stage(`${id}-word-fifo`, 'Word FIFO', 'Buffers macro words', `rtl/mxm/lpu_mxm_${id}_macro_frontend.sv`, id === 'compute' ? 86 : id === 'load' ? 85 : 83, 'u_word_fifo', 'lpu_queue_fifo'),
-          stage(`${id}-decoder`, `${name.replace(' Frontend', '')} Macro Decoder`, 'Queue-kind-specific macro decode', `rtl/mxm/lpu_mxm_${id}_macro_frontend.sv`, decoderLine, 'u_decoder', decoder),
-          stage(`${id}-context-fifo`, 'Context FIFO', 'Buffers decoded Context', `rtl/mxm/lpu_mxm_${id}_macro_frontend.sv`, id === 'compute' ? 141 : id === 'load' ? 138 : 135, 'u_context_fifo', 'lpu_queue_fifo'),
-          stage(`${id}-scheduler`, `${name.replace(' Frontend', '')} Scheduler`, 'Timed base-instruction expansion', `rtl/mxm/lpu_mxm_${id}_macro_frontend.sv`, schedulerLine, 'u_scheduler', scheduler),
-          stage(`${id}-timed-queue`, `${name.replace(' Frontend', '')} Timed Queue`, 'Independent issue ownership', 'rtl/mxm/lpu_mxm_subsystem.sv', queueLine, `u_${id}_timed_queue`, 'lpu_mxm_issue_queue'),
+          stage(`${id}-word-fifo`, 'Word FIFO', 'Buffers macro words', 'rtl/mxm/icu/lpu_mxm_macro_frontend.sv', 1, 'u_word_fifo', 'lpu_queue_fifo'),
+          stage(`${id}-decoder`, 'MXM Shared Macro Decoder', 'Shared 12-state architecture · independent per-stream state', 'rtl/mxm/icu/lpu_mxm_macro_frontend.sv', 1, 'u_decoder', 'lpu_mxm_macro_decoder_core'),
+          stage(`${id}-context-fifo`, 'Context FIFO', 'Buffers decoded Context', 'rtl/mxm/icu/lpu_mxm_macro_frontend.sv', 1, 'u_context_fifo', 'lpu_queue_fifo'),
+          stage(`${id}-scheduler`, `${name.replace(' Frontend', '')} Scheduler`, 'Stream-specific Context expansion and direct native-port issue', 'rtl/mxm/icu/lpu_mxm_macro_frontend.sv', 1, 'u_scheduler', 'lpu_mxm_macro_scheduler_core'),
+          stage(`${id}-qctl-gate`, 'QCTL Endpoint Gate', 'Per-stream Scheduler Cycle Counter enable', 'rtl/mxm/lpu_mxm_subsystem.sv', 1, 'gen_qctl_endpoint', 'lpu_qctl_endpoint + lpu_qctl_controller'),
+          stage(`${id}-native-port`, `${name.replace(' Frontend', '')} Native Port`, 'Direct ready/valid handoff · no post-Scheduler queue', 'rtl/mxm/lpu_mxm_subsystem.sv', 1, 'frontend_issue_*', 'native command port'),
         ],
       })),
-      evidence: [source('rtl/mxm/lpu_mxm_subsystem.sv', 187, 'u_load_frontend', 'Load local iMEM frontend'), source('rtl/mxm/lpu_mxm_subsystem.sv', 204, 'u_dequant_frontend', 'Dequant local iMEM frontend'), source('rtl/mxm/lpu_mxm_subsystem.sv', 221, 'u_compute_frontend', 'Compute local iMEM frontend')],
+      evidence: [source('rtl/mxm/lpu_mxm_subsystem.sv', 1, 'gen_frontend[0:4]', 'five generated local iMEM frontends'), source('rtl/mxm/icu/lpu_mxm_macro_frontend.sv', 1, 'u_decoder / u_scheduler', 'shared Decoder architecture and stream-specific Scheduler with direct native issue')],
     },
     {
       id: 'sxm',
@@ -488,19 +492,18 @@ export function buildConfigurationOverviewModel(snapshot, physicalArchitecture) 
     spec('Context Valid', 'OUTPUT_CONTEXT until handshake'),
   ])
   setSpecs('mem-context-fifo', [spec('Depth', '4 entries'), spec('Entry width', '271 bit'), spec('Contents', 'Decoded MEM Context')])
-  setSpecs('mem-scheduler', [spec('Active contexts', '4'), spec('Issue lookahead', '2 cycles'), spec('Internal issue FIFO', 'None · queue is the register boundary'), spec('Output instruction', '64 bit')])
-  setSpecs('mem-timed-queue', [spec('Depth', '16 entries'), spec('Entry width', '96 bit'), spec('Contents', '32-bit cycle + 64-bit instruction')])
+  setSpecs('mem-scheduler', [spec('Active contexts', '4'), spec('Issue lookahead', '2 cycles'), spec('Independent issue queue', 'None'), spec('Output instruction', '64 bit'), spec('Output cycle', '32 bit')])
 
-  const mxmContextWidths = { load: 257, dequant: 242, compute: 288 }
-  for (const id of ['load', 'dequant', 'compute']) {
-    const contextWidth = mxmContextWidths[id]
+  const mxmContextWidth = 288
+  for (const id of ['load', 'compute', 'dequant', 'param-load', 'backend']) {
     setSpecs(`${id}-imem`, [spec('Program words', '65,536'), spec('Word width', '128 bit'), spec('Address width', '16 bit'), spec('Response buffering', '4 entries')])
     setSpecs(`${id}-fetch`, [spec('Fetch range', '65,536 words'), spec('Word width', '128 bit'), spec('Ordering', 'In order'), spec('Completion', 'Last-word tagged')])
     setSpecs(`${id}-word-fifo`, [spec('Depth', '4 entries'), spec('Entry width', '129 bit'), spec('Contents', '128-bit macro word + last')])
-    setSpecs(`${id}-decoder`, [spec('Input', '128-bit macro word'), spec('Output', `${contextWidth}-bit Context`), spec('Operation', `${id[0].toUpperCase()}${id.slice(1)} macro decode`)])
-    setSpecs(`${id}-context-fifo`, [spec('Depth', '4 entries'), spec('Entry width', `${contextWidth} bit`), spec('Contents', 'Decoded MXM Context')])
-    setSpecs(`${id}-scheduler`, [spec('Active contexts', '4'), spec('Issue lookahead', '2 cycles'), spec('Internal issue FIFO', 'None · queue is the register boundary'), spec('Output instruction', '49 bit')])
-    setSpecs(`${id}-timed-queue`, [spec('Depth', '16 entries'), spec('Entry width', '81 bit'), spec('Contents', '32-bit cycle + 49-bit instruction')])
+    setSpecs(`${id}-decoder`, [spec('Input', '128-bit macro word'), spec('Output', `${mxmContextWidth}-bit Context`), spec('Architecture', 'Shared 12-state FSM'), spec('Instance state', 'Independent per stream')])
+    setSpecs(`${id}-context-fifo`, [spec('Depth', '4 entries'), spec('Entry width', `${mxmContextWidth} bit`), spec('Contents', 'Decoded MXM Context')])
+    setSpecs(`${id}-scheduler`, [spec('Active contexts', '4'), spec('Issue lookahead', '2 cycles'), spec('Post-Scheduler queue', 'None'), spec('Output instruction', '49 bit')])
+    setSpecs(`${id}-qctl-gate`, [spec('Endpoint', 'One formal QCTL endpoint'), spec('Counter control', 'scheduler_counter_ce'), spec('Queue index', '5-bit local directory')])
+    setSpecs(`${id}-native-port`, [spec('Handshake', 'ready / valid'), spec('Issue ownership', 'Scheduler direct'), spec('Post-Scheduler queue', 'None')])
   }
 
   const sxmContextWidths = { transpose: 608, permute: 613 }
@@ -526,12 +529,12 @@ export function buildConfigurationOverviewModel(snapshot, physicalArchitecture) 
     const compressedStream = frontend.id === 'mem' || frontend.id === 'mxm'
     const input = specValue(item, 'Input', 'Macro word stream')
     const output = specValue(item, 'Output', 'Decoded Context')
-    if (frontend.id === 'mem') return {
+    if (frontend.id === 'mem' || frontend.id === 'mxm') return {
       kind: 'decoder',
       visualization: 'state-machine',
-      title: 'MEM Macro Decoder 状态转移图',
-      stateBadge: '12 RTL STATES · CURRENT LOCAL RTL',
-      summary: '首个 Macro 先完成全局控制、字典和初始状态装载；后续 Macro 在 Run、Template、Delta 与 Context 输出之间循环。',
+      title: frontend.id === 'mem' ? 'MEM Macro Decoder 状态转移图' : 'MXM Shared Macro Decoder · 12-State FSM',
+      stateBadge: frontend.id === 'mem' ? '12 RTL STATES · CURRENT LOCAL RTL' : '1 SHARED ARCHITECTURE · 5 INDEPENDENT INSTANCES',
+      summary: frontend.id === 'mem' ? '首个 Macro 先完成全局控制、字典和初始状态装载；后续 Macro 在 Run、Template、Delta 与 Context 输出之间循环。' : `五条 MXM 流复用同一个 12 状态 Decoder RTL 架构；当前 ${variant.name} 拥有独立的状态寄存器、字典和 Macro 计数。`,
       inputLabel: `${input} · ready/valid from Word FIFO · bit zero consumed first`,
       outputLabel: `${output} · ready/valid to Context FIFO`,
       timingNote: '图中重复的 Run、Template、Output 框是同一 RTL 状态在首个 Macro 与后续循环中的路径视图；Queue Macro 计数清零后，IDLE 自循环并令 done_o=1。',
@@ -611,7 +614,8 @@ export function buildConfigurationOverviewModel(snapshot, physicalArchitecture) 
     const activeContexts = specValue(item, 'Active contexts', '1')
     const outputInstruction = specValue(item, 'Output instruction', 'Base instruction')
     const queueName = queueStage?.name ?? 'FU-local Instruction Queue'
-    const directContextAdmission = item.id === 'mem-scheduler'
+    const directNativeIssue = ['load-scheduler', 'compute-scheduler', 'dequant-scheduler', 'param-load-scheduler', 'backend-scheduler'].includes(item.id)
+    const directContextAdmission = item.id === 'mem-scheduler' || directNativeIssue
     const hasOuterSpatialTransition = ['mem-scheduler', 'load-scheduler', 'compute-scheduler'].includes(item.id)
     const outerTransitionNote = hasOuterSpatialTransition
       ? 'outer_cycle_transition advances from the previous row final issue to the next row first issue; outer_spatial_transition applies the matching address or operand transition.'
@@ -620,12 +624,14 @@ export function buildConfigurationOverviewModel(snapshot, physicalArchitecture) 
       kind: 'scheduler',
       title: `${item.name} · Context Expansion Pipeline`,
       summary: directContextAdmission
-        ? `The MEM Scheduler validates and converts the Context FIFO head, admits it directly into an originally free Active Context slot, then selects work ahead of the absolute issue cycle and emits one MEM base instruction into the paired Instruction Queue. ${outerTransitionNote}`
+        ? `${directNativeIssue ? 'The MXM stream Scheduler' : 'The MEM Scheduler'} validates and converts the Context FIFO head, admits it directly into an originally free Active Context slot, then selects work ahead of the absolute issue cycle and directly emits one ${directNativeIssue ? 'native MXM command' : 'MEM64 instruction'} plus issue cycle. ${outerTransitionNote}`
         : `The Scheduler captures and admits a decoded Context through distinct ownership boundaries, retains its loop/timing state, selects work ahead of the absolute issue cycle and emits one FU base instruction into the paired Instruction Queue. ${outerTransitionNote}`,
       inputLabel: `${contextWidth} Context · ready/valid from Context FIFO`,
-      outputLabel: `${outputInstruction} instruction + 32-bit issue cycle → ${queueName}`,
+      outputLabel: directContextAdmission
+        ? `${outputInstruction} instruction + 32-bit issue cycle → ${directNativeIssue ? `${variant.name.replace(' Frontend', '')} native command port through QCTL gating` : 'MEM64 / Native32 adapter'}`
+        : `${outputInstruction} instruction + 32-bit issue cycle → ${queueName}`,
       timingNote: directContextAdmission
-        ? `Registered ownership boundaries are the upstream Context FIFO, Active Context state and the FU-local Instruction Queue. The MEM Scheduler has no second ingress register: context_admit_fire is the direct Context FIFO handshake into an originally free Active Context slot. Active Context advances only on schedule_select_fire, when the Instruction Queue accepts the generated instruction. ${outerTransitionNote}`
+        ? `Registered ownership boundaries are the upstream Context FIFO and Active Context state. The ${directNativeIssue ? 'MXM stream' : 'MEM'} Scheduler has no second ingress register and no independent post-Scheduler output queue: context_admit_fire is the direct Context FIFO handshake into an originally free Active Context slot. Active Context advances only on schedule_select_fire, when the downstream ${directNativeIssue ? 'native command port' : 'adapter'} accepts the issue handshake. ${outerTransitionNote}`
         : `Registered ownership boundaries are Context ingress, Active Context state and the FU-local Instruction Queue. context_capture_fire captures Context FIFO data; context_admit_fire moves the ingress record into a slot that was already free before the current edge. Active Context advances only on schedule_select_fire, when the queue accepts the generated instruction. ${outerTransitionNote}`,
       steps: directContextAdmission ? [
         { id: 'context-fifo-head', name: 'Context FIFO Head', description: 'Observe the current Context FIFO output fields directly; the FIFO retains the head while context_ready_o is low.', boundary: 'UPSTREAM FIFO STORAGE · READY / VALID' },
@@ -633,8 +639,8 @@ export function buildConfigurationOverviewModel(snapshot, physicalArchitecture) 
         { id: 'direct-admit', name: 'Direct Active Context Admission', description: 'context_admit_fire writes the validated and converted Context directly into the first originally free Active Context slot.', boundary: 'context_admit_fire · FREE SLOT' },
         { id: 'active-context', name: 'Active Context State', description: `Store up to ${activeContexts} active Context${activeContexts === '1' ? '' : 's'} with remaining loop counts, next issue cycle and normalized outer transition state.`, boundary: hasOuterSpatialTransition ? 'outer_cycle_transition · outer_spatial_transition' : 'outer_cycle_transition' },
         { id: 'lookahead-select', name: 'Lookahead Due Select', description: 'Compare next-issue cycles against schedule_cycle + 2 and detect conflicts, missed generation or overflow.', boundary: 'ISSUE_LOOKAHEAD = 2' },
-        { id: 'instruction-generate', name: 'Base Instruction Generate', description: `Apply the current induced address and form the ${outputInstruction} MEM instruction.`, boundary: 'INSTRUCTION + ABSOLUTE CYCLE' },
-        { id: 'queue-handoff', name: 'Instruction Queue Handoff', description: `schedule_select_fire transfers the timed instruction to ${queueName}; only this accepted handshake advances or retires the Context.`, boundary: 'schedule_select_fire · ISSUE VALID / READY' },
+        { id: 'instruction-generate', name: 'Base Instruction Generate', description: `Apply the current induced address or operand and form the ${outputInstruction} ${directNativeIssue ? 'MXM native command' : 'MEM instruction'}.`, boundary: 'INSTRUCTION + ABSOLUTE CYCLE' },
+        { id: 'direct-issue', name: directNativeIssue ? 'Direct Native-Port Issue' : 'Direct MEM64 Issue', description: directNativeIssue ? 'schedule_select_fire transfers the generated command directly through QCTL endpoint gating to the matching MXM native ready/valid port; no Instruction Queue or Local Coordinator exists after the Scheduler.' : 'schedule_select_fire transfers mem_issue_instruction_o and mem_issue_cycle_o directly through the ready/valid boundary to the matching MEM64 / Native32 adapter lane; only this accepted handshake advances or retires the Context.', boundary: directNativeIssue ? 'native_valid / ready · QCTL CE · schedule_select_fire' : 'mem_issue_valid / ready · schedule_select_fire' },
       ] : [
         { id: 'context-ingress', name: 'Context Ingress Register', description: 'context_capture_fire captures one Context through ready/valid without exposing Active Context storage latency upstream.', boundary: 'context_capture_fire · BACKPRESSURE SAFE' },
         { id: 'validate-admit', name: 'Validate + Admit', description: 'context_admit_fire checks target, instruction, loop counts, transitions and deadline lead time, then writes only a slot that was already free before the current edge.', boundary: 'context_admit_fire · PRE-EDGE FREE SLOT' },
@@ -666,12 +672,12 @@ export function buildConfigurationOverviewModel(snapshot, physicalArchitecture) 
       bitsPerStrobe: 32,
       addressBits: 17,
       scopeBits: 2,
-      destinationBits: 12,
+      destinationBits: 13,
       sequenceIdPresent: false,
       status: 'rtl-confirmed',
       evidence: [
         source('rtl/program_load/lpu_program_load_pkg.sv', 11, 'PROGRAM_WORD_STRB_WIDTH', '4 strobes × 32-bit segments'),
-        source('rtl/program_load/lpu_program_word_fifo.sv', 11, 'enqueue_scope_i / enqueue_destination_i', '2-bit Scope + 12-bit Destination travel with every Program Word; no Sequence ID field'),
+        source('rtl/program_load/lpu_program_word_fifo.sv', 11, 'enqueue_scope_i / enqueue_destination_i', '2-bit Scope + 13-bit Destination travel with every Program Word; no Sequence ID field'),
       ],
     },
     routing: {
@@ -682,20 +688,20 @@ export function buildConfigurationOverviewModel(snapshot, physicalArchitecture) 
           { name: 'WEST', encoding: 1, meaning: 'Send to the concrete West endpoint.' },
           { name: 'BOTH', encoding: 2, meaning: 'Distributor expands one record into independent East and West handshakes.' },
         ],
-        relationship: 'Scope controls fanout. It is not part of the 12-bit Destination and is not an FU instruction field.',
+        relationship: 'Scope controls fanout. It is not part of the 13-bit Destination and is not an FU instruction field.',
         status: 'rtl-confirmed',
         evidence: [source('rtl/program_load/lpu_program_load_pkg.sv', 30, 'lpu_program_hemisphere_scope_e', 'PROGRAM_SCOPE_EAST=0, WEST=1, BOTH=2')],
       },
       destination: {
-        widthBits: 12,
+        widthBits: 13,
         fields: [
-          { name: 'Hemisphere', bits: '11', widthBits: 1, meaning: 'Concrete endpoint: East=0, West=1.' },
-          { name: 'Target Kind', bits: '10:8', widthBits: 3, meaning: 'MEM, three MXM classes, VXM, SXM Transpose/Permute, or Reserved.' },
+          { name: 'Hemisphere', bits: '12', widthBits: 1, meaning: 'Concrete endpoint: East=0, West=1.' },
+          { name: 'Target Kind', bits: '11:8', widthBits: 4, meaning: 'MEM, five MXM stream classes, VXM or SXM Transpose/Permute.' },
           { name: 'Local Target Index', bits: '7:0', widthBits: 8, meaning: 'Index is local to the selected Hemisphere and Kind.' },
         ],
-        relationship: 'Destination names exactly one physical target: {hemisphere[11], kind[10:8], local_target_index[7:0]}.',
+        relationship: 'Destination names exactly one physical target: {hemisphere[12], kind[11:8], local_target_index[7:0]}.',
         status: 'rtl-confirmed',
-        evidence: [source('rtl/program_load/lpu_program_load_pkg.sv', 47, 'PROGRAM_DESTINATION_*', '12-bit Destination field boundaries and program_destination_pack()')],
+        evidence: [source('rtl/program_load/lpu_program_load_pkg.sv', 6, 'PROGRAM_DESTINATION_*', '13-bit Destination field boundaries, 4-bit Target Kind and program_destination_pack()')],
       },
       kinds: [
         { name: 'MEM', encoding: 0, status: 'rtl-confirmed' },
@@ -705,18 +711,19 @@ export function buildConfigurationOverviewModel(snapshot, physicalArchitecture) 
         { name: 'VXM', encoding: 4, status: vxmBoundaryConnected ? 'partially-verified' : 'needs-review' },
         { name: 'SXM_TRANSPOSE', encoding: 5, status: sxmBoundaryConnected ? 'partially-verified' : 'needs-review' },
         { name: 'SXM_PERMUTE', encoding: 6, status: sxmBoundaryConnected ? 'partially-verified' : 'needs-review' },
-        { name: 'RESERVED', encoding: 7, status: 'needs-review' },
+        { name: 'MXM_PARAM_LOAD', encoding: 7, status: 'rtl-confirmed' },
+        { name: 'MXM_BACKEND', encoding: 8, status: 'rtl-confirmed' },
       ],
       mappings: [
         { name: 'MEM', localIndex: '0..103 / Hemisphere', status: 'rtl-confirmed', statement: '52 Slices × 2 Banks; no global Queue ID translation remains in the FU Cluster.' },
-        { name: 'MXM Load / Dequant / Compute', localIndex: '0..1 / Kind / Hemisphere', status: 'rtl-confirmed', statement: 'Each MXM Kind selects one of two local MXM instances.' },
+        { name: 'MXM Load / Compute / Dequant / Param Load / Backend', localIndex: '0..1 / Kind / Hemisphere', status: 'rtl-confirmed', statement: 'Each of the five MXM stream kinds selects one of two local MXM instances per Hemisphere.' },
         { name: 'VXM', localIndex: 'Central direct → Subsystem Boundary', status: vxmBoundaryConnected ? 'partially-verified' : 'needs-review', statement: 'The VXM request bypasses both Relay chains and reaches the real lpu_vxm_subsystem Program Boundary. Ready=0 and no Commit because the local-iMEM / Fetch Adapter is absent.' },
         { name: 'SXM Transpose / Permute', localIndex: 'R0–R6 → R6 Outer Local → Subsystem Boundary', status: sxmBoundaryConnected ? 'partially-verified' : 'needs-review', statement: 'Transpose and Permute records traverse the seven-stage Hemisphere Relay chain and reach the real lpu_sxm_subsystem Program Boundary. Ready=0 and no Commit because the local-iMEM / Fetch Adapter is absent.' },
       ],
       controlSystemBoundary: {
         status: 'needs-review',
-        statement: 'The Program Command Sequencer carries independent 2-bit Scope, but the current lpu_top / lpu_program_load_controller command-write boundary exposes only Destination and derives EAST or WEST Scope from Destination[11]. A top-level BOTH command input is not exposed in the inspected RTL.',
-        evidence: [source('rtl/program_load/lpu_program_load_controller.sv', 248, 'command_scope_w', 'Scope is derived from command_write_destination_i[11] at the Controller boundary', 'needs-review')],
+        statement: 'The Program Command Sequencer carries independent 2-bit Scope, but the current lpu_top / lpu_program_load_controller command-write boundary exposes only Destination and derives EAST or WEST Scope from Destination[12]. A top-level BOTH command input is not exposed in the inspected RTL.',
+        evidence: [source('rtl/program_load/lpu_program_load_controller.sv', 248, 'command_scope_w', 'Scope is derived from the Destination Hemisphere bit at the Controller boundary', 'needs-review')],
       },
     },
     relay: {
@@ -733,7 +740,7 @@ export function buildConfigurationOverviewModel(snapshot, physicalArchitecture) 
       verificationStatus: 'System Program-to-FU VCS PASS',
       integrationStatus: 'Integrated',
       vxmBypass: 'Central VXM Direct delivers the complete Program Record to the real lpu_vxm_subsystem Program Boundary and bypasses both Relay chains. Boundary Connected; Ready=0 and No Commit because the local-iMEM / Fetch Adapter is not integrated.',
-      peripheralForward: 'R6 Outer Local preserves the complete 12-bit Destination. MXM Load / Dequant / Compute are integrated. SXM Transpose / Permute traverse R0–R6 and reach lpu_sxm_subsystem; Boundary Connected, Ready=0, No Commit, Endpoint Not Integrated.',
+      peripheralForward: 'R6 Outer Local preserves the complete 13-bit Destination. All five MXM streams are integrated. SXM Transpose / Permute traverse R0–R6 and reach lpu_sxm_subsystem; Boundary Connected, Ready=0, No Commit, Endpoint Not Integrated.',
       localProgramPortsPerHemisphere: relayCountPerHemisphere,
       totalLocalProgramPorts: relayTotalStages,
       clusterAdapter: 'Program Distribution is a direct lpu_top child. It exports 7 independent MEM Local Program Ports per Hemisphere across the top-level boundary; the FU Cluster only consumes these ports and owns QCTL, Schedule Cycle and FU-local Frontends/Subsystems.',
@@ -829,6 +836,16 @@ export function buildConfigurationOverviewModel(snapshot, physicalArchitecture) 
         evidence: [source('rtl/core/lpu_fu_subsystem_cluster.sv', 296, 'PROGRAM_TARGET_MXM_COMPUTE', 'Kind=3 and Local Index 0..1 select one of two local MXM instances')],
       },
       {
+        id: 'mxm-param-load', name: 'MXM Param Load local iMEM', acceptedStrobe: '1111', validPayloadBits: 128,
+        behavior: 'Kind=7, Local Index 0..1 per Hemisphere. The dedicated stream reaches the Param Load native command port directly after scheduling.', status: 'rtl-confirmed',
+        evidence: [source('rtl/program_load/lpu_program_load_pkg.sv', 58, 'PROGRAM_TARGET_MXM_PARAM_LOAD', 'fourth MXM stream target kind')],
+      },
+      {
+        id: 'mxm-backend', name: 'MXM Backend local iMEM', acceptedStrobe: '1111', validPayloadBits: 128,
+        behavior: 'Kind=8, Local Index 0..1 per Hemisphere. The dedicated stream reaches the Backend native command port directly after scheduling.', status: 'rtl-confirmed',
+        evidence: [source('rtl/program_load/lpu_program_load_pkg.sv', 59, 'PROGRAM_TARGET_MXM_BACKEND', 'fifth MXM stream target kind')],
+      },
+      {
         id: 'sxm-boundary', name: 'SXM Program Boundary', acceptedStrobe: 'BOUNDARY ONLY', validPayloadBits: 128,
         behavior: 'Transpose / Permute reaches lpu_sxm_subsystem through R0–R6. Ready=0 and No Commit until a local-iMEM / Fetch Adapter is integrated.', status: 'partially-verified',
         evidence: [source('rtl/sxm/lpu_sxm_subsystem.sv', 5, 'Program Load boundary', 'Complete Program Record ports exist; local-iMEM transport is not implemented', 'rtl-confirmed')],
@@ -856,24 +873,23 @@ export function buildConfigurationOverviewModel(snapshot, physicalArchitecture) 
       evidence: [source('rtl/program_load/lpu_program_distribute_system.sv', 248, 'gen_program_relay_chain', 'Top-level Program Distribution routes through integrated endpoint decode, Relay chains and fourteen independent Local Program Ports')],
     }],
     reviewItems: [
-      { name: 'Top-level BOTH Scope exposure', status: 'needs-review', statement: 'Distribution Ingress BOTH expansion is RTL-confirmed, but lpu_program_load_controller currently derives only EAST or WEST Scope from Destination[11].' },
-      { name: 'MXM 49/48-bit issue width', status: 'needs-review', statement: 'Current frontend/queue path still contains a width discrepancy; do not present it as resolved.' },
+      { name: 'Top-level BOTH Scope exposure', status: 'needs-review', statement: 'Distribution Ingress BOTH expansion is RTL-confirmed, but lpu_program_load_controller currently derives only EAST or WEST Scope from Destination[12].' },
+      { name: 'MXM numerical datapath validation', status: 'needs-review', statement: 'Transport and five-stream frontend integration are validated; MXM numerical datapath and CModel-to-RTL cycle comparison remain outside this handoff scope.' },
       { name: 'VXM Program endpoint', status: 'needs-review', statement: 'Boundary Connected through Central Direct and explicitly bypasses Relay. Endpoint Not Integrated: Ready=0, No Commit, missing local-iMEM / Fetch Adapter.' },
       { name: 'SXM Program endpoint', status: 'needs-review', statement: 'Boundary Connected after real R0–R6 traversal. Endpoint Not Integrated: Ready=0, No Commit, missing local-iMEM / Fetch Adapter.' },
     ],
     validation: {
-      status: 'QCTL REWORK · SCOPED RTL / INTEGRATION PASS',
-      scope: 'The current handoff records QCTL Controller, Shared Pool, complete QCTL System, MEM-local Scheduler integration, top-level macro-frontend Cluster simulation, and full lpu_top compile/elaboration/link validation.',
-      limitation: 'These PASS results are scoped to the named QCTL modules and integration tests. They are not a complete DMA system-level execution PASS. The independent CMODEL QCTL runtime has not replaced the old formal main chain, and subsystem.program.loader still has the existing program-load-did-not-finish issue.',
+      status: 'FIVE-STREAM MXM TRANSPORT / SYSTEM VCS PASS',
+      scope: 'Five-stream Decoder, Scheduler and Frontend tests; Program Load transport; full Program Load-to-FU integration; QCTL distributed suite; and lpu_top compilation with QCTL disabled and enabled.',
+      limitation: 'MXM numerical datapath verification and CModel-to-RTL cycle comparison were not run in this handoff. VXM and SXM remain outside the formal QCTL endpoint map.',
       results: [
-        'lpu_qctl_controller_tb · VCS PASS · four waits + TAG match/mismatch + CE stop/restart',
-        'lpu_qctl_shared_pool_tb · VCS PASS · partition/address mapping + single-port arbitration + multi-Queue requests',
-        'lpu_qctl_system_tb · VCS PASS · 3-participant Barrier + early NOTIFY + two rounds + early Event + MEM_PACKET hold/reset',
-        'lpu_mem_subsystem_native_tb · VCS PASS · independent Bank-local QCTL stop/run + Native dual-Bank issue',
-        'lpu_top_macro_frontend_cluster_tb · VCS PASS · checks=77',
-        'lpu_top · VCS compile + elaboration + link PASS',
+        'MXM five-stream Decoder / Scheduler / Frontend · VCS PASS',
+        'Program Load transport and full Program Load → FU · VCS PASS · 342 checks',
+        'MEM regressions and QCTL distributed suite · VCS PASS',
+        'lpu_top ENABLE_QCTL=0 / 1 · VCS compile PASS',
+        'MXM numerical datapath and CModel↔RTL cycle comparison · OUT OF SCOPE / NOT RUN',
       ],
-      evidence: [source('handoff/latest-rtl-change.md', 77, 'QCTL Pool / Cache / Controller Refactor', 'named QCTL module and integration VCS PASS results; full DMA system-level PASS not claimed', 'rtl-confirmed')],
+      evidence: [source('handoff/latest-rtl-change.md', 1, 'QCTL Distributed Relay Store', 'named module and integration VCS PASS results; full runtime system PASS not claimed', 'rtl-confirmed')],
     },
   }
 
@@ -902,14 +918,54 @@ export function buildConfigurationOverviewModel(snapshot, physicalArchitecture) 
         { id: 'mxm-load', name: 'MXM Load', first: 208, last: 211, count: 4, status: 'rtl-confirmed', statement: 'One Load lane per MXM.' },
         { id: 'mxm-dequant', name: 'MXM Dequant', first: 212, last: 215, count: 4, status: 'rtl-confirmed', statement: 'One Dequant lane per MXM.' },
         { id: 'mxm-compute', name: 'MXM Compute', first: 216, last: 219, count: 4, status: 'rtl-confirmed', statement: 'One Compute lane per MXM.' },
+        { id: 'mxm-param-load', name: 'MXM Param Load', first: 220, last: 223, count: 4, status: 'rtl-confirmed', statement: 'One Param Load lane per MXM.' },
+        { id: 'mxm-backend', name: 'MXM Backend', first: 224, last: 227, count: 4, status: 'rtl-confirmed', statement: 'One Backend lane per MXM.' },
       ],
       pipeline: [
-        { id: 'pool', name: 'Shared QCTL Pool', count: 1, statement: 'Owns Partition Base / Count / Generation, physical address mapping and one read-port arbitration.', evidence: [source('rtl/icu/lpu_qctl_system.sv', 141, 'u_shared_pool', 'single shared lpu_qctl_shared_pool')] },
-        { id: 'cache', name: 'Per-Queue Cache', count: qctlQueueCount.value, statement: `Each formal endpoint owns a ${qctlCacheDepth.value ?? 'parameterized'}-entry Cache with Fetch Offset, Retire Offset, in-flight read count and Head Record.`, evidence: [source('rtl/icu/lpu_qctl_system.sv', 187, 'gen_queue_endpoint[*].u_queue_cache', 'one lpu_qctl_queue_cache per formal Queue'), qctlCacheDepth.evidence] },
-        { id: 'controller', name: 'Per-Queue Five-State Controller', count: qctlQueueCount.value, statement: 'Semantic Controller owns only IDLE and the four blocking waits; Pool/Cache state and Scheduler Cycle remain outside it.', evidence: [source('rtl/icu/lpu_qctl_system.sv', 215, 'gen_queue_endpoint[*].u_controller', 'one lpu_qctl_controller per formal Queue'), source('rtl/icu/lpu_qctl_controller.sv', 34, 'state_t', 'IDLE + four wait states')] },
+        { id: 'load-manager', name: 'Load Manager', count: 1, statement: 'Translates external Partition/Base/Count/Generation and logical Record writes into Queue/Offset packets.', evidence: [source('rtl/icu/lpu_qctl_global_subsystem.sv', 168, 'u_load_manager', 'one lpu_qctl_load_manager')] },
+        { id: 'relay-chain', name: 'East / West Relay Chains', count: 2, statement: 'Routes load-time Partition and Record packets through R0–R6 with per-stage backpressure.', evidence: [source('rtl/icu/lpu_qctl_global_subsystem.sv', 184, 'u_east_relay_chain / u_west_relay_chain', 'two lpu_qctl_relay_chain instances')] },
+        { id: 'relay-store', name: 'Regional Relay Store', count: qctlRelayCount.value, statement: `Each Relay owns a Directory, ${qctlRegionDepth.value ?? 'parameterized'}-Record Array, matching Valid Bitmap and ${qctlRelayBufferDepth.value ?? 'parameterized'}-entry Transit FIFO.`, evidence: [source('rtl/icu/lpu_qctl_relay_chain.sv', 155, 'gen_relay[*].u_relay', 'fourteen lpu_qctl_relay instances'), qctlRegionDepth.evidence] },
+        { id: 'endpoint', name: 'FU-local Endpoint Reader', count: qctlQueueCount.value, statement: 'Each MEM/MXM Scheduler supplies Head Index + Generation and receives only a configured, in-range, written Record.', evidence: [source('rtl/mem/lpu_mem_subsystem.sv', 202, 'gen_qctl_endpoint[*].u_qctl_endpoint', 'one endpoint beside each MEM Scheduler'), source('rtl/mxm/lpu_mxm_subsystem.sv', 1, 'gen_qctl_endpoint[0:4]', 'five endpoints per MXM')] },
+        { id: 'controller', name: 'Per-Queue Five-State Controller', count: qctlQueueCount.value, statement: 'The FU-local Controller consumes the regional Head Record and owns the four blocking waits plus exact-cycle Counter CE.', evidence: [source('rtl/icu/lpu_qctl_controller.sv', 34, 'state_t', 'IDLE + four wait states')] },
         { id: 'ce', name: 'scheduler_counter_ce', count: qctlQueueCount.value, statement: 'The blocking Record lowers CE in the same cycle; QCTL does not create a local clock or recalculate the Scheduler Cycle.', evidence: [source('rtl/icu/lpu_qctl_controller.sv', 182, 'scheduler_counter_ce_o', 'run/configured/primed and state-dependent CE')] },
-        { id: 'counter', name: 'FU-local Scheduler Cycle Counter', count: qctlQueueCount.value, statement: '208 MEM counters and 12 MXM stream counters live in their owning FU Subsystems.', evidence: [source('rtl/mem/lpu_mem_subsystem.sv', 167, 'qctl_scheduler_cycle_q', 'one Bank-local 32-bit Counter per MEM Queue'), source('rtl/mxm/lpu_mxm_subsystem.sv', 131, 'qctl_scheduler_cycle_q', 'three Stream-local 32-bit Counters per MXM')] },
+        { id: 'counter', name: 'FU-local Scheduler Cycle Counter', count: qctlQueueCount.value, statement: '208 MEM counters and 20 MXM stream counters live in their owning FU Subsystems.', evidence: [source('rtl/mem/lpu_mem_subsystem.sv', 167, 'qctl_scheduler_cycle_q', 'one Bank-local 32-bit Counter per MEM Queue'), source('rtl/mxm/lpu_mxm_subsystem.sv', 1, 'qctl_scheduler_cycle_q', 'five Stream-local 32-bit Counters per MXM')] },
       ],
+      relayTopology: {
+        globalCapacity: qctlTotalCapacity.value,
+        regionDepth: qctlRegionDepth.value,
+        queueEntryLimit: qctlQueueEntryLimit.value,
+        transitDepth: qctlRelayBufferDepth.value,
+        storeContract: [
+          { id: 'directory', name: 'Queue Directory', statement: 'Valid + Local Base + Count + Generation for the Queues owned by this Relay.' },
+          { id: 'records', name: 'Record Array', statement: 'Stores 96-bit QCTL Records; the array itself is not reset.' },
+          { id: 'valid', name: 'Valid Bitmap', statement: 'Cleared by Reset / Program Clear and set only by a legal Record handshake.' },
+          { id: 'transit', name: 'Transit FIFO', statement: 'Buffers packets that belong to a later Relay and propagates backpressure upstream.' },
+        ],
+        phases: [
+          { id: 'load', name: 'PROGRAM LOAD', path: 'Load Manager → Hemisphere select → R0…R6', statement: 'Partition metadata and Records are routed once to the owning regional Store. Global Load Complete requires every configured offset to be valid.' },
+          { id: 'run', name: 'RUN', path: 'Endpoint Head Index/Generation → owning Store → Controller', statement: 'RUN reads the local Store directly. There is no refill from a central Pool and no per-Queue Record Cache.' },
+        ],
+        chains: [
+          { id: 'east', name: 'East Chain', scope: 'MEM 0..103 + MXM0/1', stages: [
+            { id: 'r0', name: 'R0', queues: 'MEM 0..15', locals: 'L0..15' },
+            { id: 'r1', name: 'R1', queues: 'MEM 16..31', locals: 'L0..15' },
+            { id: 'r2', name: 'R2', queues: 'MEM 32..47', locals: 'L0..15' },
+            { id: 'r3', name: 'R3', queues: 'MEM 48..63', locals: 'L0..15' },
+            { id: 'r4', name: 'R4', queues: 'MEM 64..79', locals: 'L0..15' },
+            { id: 'r5', name: 'R5', queues: 'MEM 80..95', locals: 'L0..15' },
+            { id: 'r6', name: 'R6', queues: 'MEM 96..103 + MXM 208/209, 212/213, 216/217, 220/221, 224/225', locals: 'L0..17 · 5-bit index' },
+          ] },
+          { id: 'west', name: 'West Chain', scope: 'MEM 104..207 + MXM2/3', stages: [
+            { id: 'r0', name: 'R0', queues: 'MEM 104..119', locals: 'L0..15' },
+            { id: 'r1', name: 'R1', queues: 'MEM 120..135', locals: 'L0..15' },
+            { id: 'r2', name: 'R2', queues: 'MEM 136..151', locals: 'L0..15' },
+            { id: 'r3', name: 'R3', queues: 'MEM 152..167', locals: 'L0..15' },
+            { id: 'r4', name: 'R4', queues: 'MEM 168..183', locals: 'L0..15' },
+            { id: 'r5', name: 'R5', queues: 'MEM 184..199', locals: 'L0..15' },
+            { id: 'r6', name: 'R6', queues: 'MEM 200..207 + MXM 210/211, 214/215, 218/219, 222/223, 226/227', locals: 'L0..17 · 5-bit index' },
+          ] },
+        ],
+      },
       states: [
         { id: 'idle', name: 'IDLE', statement: 'Reads the current Head Record and keeps CE high only for nonblocking or already-completed work.' },
         { id: 'sync', name: 'SYNC_WAIT', statement: 'Holds the Queue until the Participant-Mask Barrier broadcasts Release.' },
@@ -935,22 +991,25 @@ export function buildConfigurationOverviewModel(snapshot, physicalArchitecture) 
         sramCommitRelationship: 'Packet retirement is not SRAM Commit. QCTL consumes only the final data-completion event; generation of the final SRAM Commit event remains in DMA / data movement.',
       },
       endpointBoundary: {
-        connected: ['MEM · 208 Bank Queues', 'MXM · 12 Load / Dequant / Compute Queues'],
+        connected: ['MEM · 208 Bank Queues', 'MXM · 20 Load / Compute / Dequant / Param Load / Backend Queues'],
         notConnected: ['VXM · no formal QCTL Queue number', 'SXM · no formal QCTL Queue number'],
-        statement: 'lpu_qctl_system generates one Cache + Controller per formal Queue and the Cluster directly wires CE / Scheduler Cycle only to MEM and MXM local Schedulers. Do not draw QCTL as migrated into VXM or SXM.',
+        statement: 'The global subsystem owns Load Manager, regional Relay Stores and shared runtime resources. One Endpoint + Controller remains physically beside each MEM/MXM Scheduler. Do not draw QCTL as migrated into VXM or SXM.',
       },
       validation: {
         status: 'SCOPED VCS PASS',
-        scope: 'Controller, Shared Pool, QCTL System, MEM Scheduler integration, top macro-frontend Cluster, and lpu_top compile/elaboration/link passed the handoff validation.',
-        limitation: 'This is not a complete DMA system-level PASS. Event production at the final SRAM Commit remains owned by DMA/data movement, and CMODEL formal main-chain replacement remains open.',
+        scope: 'Load Manager, Relay, Global Subsystem, Endpoint, Controller, Event Buffer, Runtime Fabric, MEM integration and lpu_top ENABLE_QCTL=0/1 compilation passed the handoff validation.',
+        limitation: 'Transport and five-stream integration are validated. MXM numerical datapath and CModel-to-RTL cycle comparison were not run; VXM and SXM remain outside the formal QCTL endpoint map.',
         results: programLoad.validation.results,
       },
-      evidence: [qctl.evidence, qctlQueueCount.evidence, source('rtl/core/lpu_fu_subsystem_cluster.sv', 167, 'gen_qctl.u_qctl_system', 'MEM=0..207, MXM Load=208..211, Dequant=212..215, Compute=216..219; VXM/SXM excluded', 'rtl-confirmed')],
+      evidence: [qctl.evidence, qctlQueueCount.evidence, source('rtl/core/lpu_fu_subsystem_cluster.sv', 198, 'gen_qctl.u_qctl_global_subsystem', 'East/West Relay Stores plus MEM/MXM FU-local Endpoints; VXM/SXM excluded', 'rtl-confirmed')],
     },
     memIsa: {
       machineCodeBits: memInstructionWidth.value,
       nativeCommandBits: nativeCommandWidth.value,
       queueEntryBits,
+      directIssueBits: memInstructionWidth.value,
+      issueCycleBits: 32,
+      hasIndependentInstructionQueue: false,
       addressBits: memAddressWidth.value,
       status: 'rtl-confirmed',
       notes: [
@@ -993,6 +1052,7 @@ export function buildConfigurationOverviewModel(snapshot, physicalArchitecture) 
       machineCodeBits: memInstructionWidth.value,
       nativeCommandBits: nativeCommandWidth.value,
       queueEntryBits,
+      hasIndependentInstructionQueue: false,
       leafSramsPerBank,
       leafSramsPerMem,
       leafSramsSystem,

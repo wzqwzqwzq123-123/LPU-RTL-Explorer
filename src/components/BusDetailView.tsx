@@ -111,7 +111,7 @@ function semanticLabel(name: string) {
   if (lower === 'fault' || lower === 'status') return 'Status / Fault'
   if (lower === 'ready') return 'Ready / Backpressure'
   if (/strb|strobe|mask/.test(lower)) return 'Word Strobe / Mask'
-  if (/scope|destination|routing/.test(lower)) return 'Scope / 12-bit Destination / iMEM Address'
+  if (/scope|destination|routing/.test(lower)) return 'Scope / 13-bit Destination / iMEM Address'
   if (/target|address|queue/.test(lower)) return 'Address / Legacy Routing'
   return name
 }
@@ -272,7 +272,7 @@ export default function BusDetailView({ physicalInterface, drillInterface, block
       <header><div><span>PROGRAM LOAD ROUTE CONTRACT</span><strong>Scope and Destination are independent fields</strong></div><small>RTL-confirmed internal contract</small></header>
       <div className="program-route-scope"><span>SCOPE [1:0]</span><b>EAST</b><b>WEST</b><b>BOTH</b><p>BOTH expands inside the Distributor into independent East and West ready/valid handshakes.</p></div>
       <div className="program-route-destination"><span>DESTINATION [11:0]</span><b className="destination-hemisphere">[11] Endpoint Hemisphere</b><b className="destination-kind">[10:8] FU Kind</b><b className="destination-index">[7:0] Local Target Index</b></div>
-      <footer><span>MEM: local index 0..103 / endpoint · integrated</span><span>MXM Load, Dequant, Compute: local index 0..1 / kind / endpoint · integrated</span><span className="needs-review">SXM: R0–R6 → real boundary · Ready=0 · No Commit</span><span className="needs-review">VXM: central direct boundary · Relay bypass · Ready=0 · No Commit</span></footer>
+      <footer><span>MEM: local index 0..103 / endpoint · integrated</span><span>MXM Load, Compute, Dequant, Param Load, Backend: local index 0..1 / kind / endpoint · integrated</span><span className="needs-review">SXM: R0–R6 → real boundary · Ready=0 · No Commit</span><span className="needs-review">VXM: central direct boundary · Relay bypass · Ready=0 · No Commit</span></footer>
     </section>}
 
     {hasProgramRoute && <section className="program-relay-interface-contract" aria-label="Program Load Relay Interface Contract">

@@ -29,6 +29,29 @@ interface PhysicalNodeData extends Record<string, unknown> {
   programNode?: ArchitectureDrillNode
   programGroup?: { id: string; label: string; note: string; role: 'layer' | 'section' }
   frontend?: ConfigurationFrontend
+  interfaceItem?: PhysicalInterface
+  interfaceSourceName?: string
+  interfaceDestinationName?: string
+  interfaceRawConnections?: RawConnection[]
+  onOpenInterface?: (id: string) => void
+  topologyNode?: {
+    label: string
+    tone: 'module' | 'buffer' | 'boot' | 'relay' | 'interface' | 'note'
+    note: string
+    insetLabel?: string
+    insetPlacement?: 'center' | 'lower-left'
+    caption?: string
+    storageSpec?: {
+      title: string
+      width: string
+      depth: string
+      contents: string
+      implementation: string
+      status: 'rtl-confirmed' | 'needs-review' | 'architecture-only'
+      extraFacts?: Array<{ label: string; value: string }>
+    }
+    disableDrilldown?: boolean
+  }
   ownerBlock?: PhysicalFunctionalBlock
   selected: boolean
   rawHighlighted: boolean
@@ -61,7 +84,11 @@ interface FrontendControlEdgeData extends Record<string, unknown> {
   frontendId: ConfigurationFrontend['id']
 }
 
-type PhysicalGraphEdge = Edge<PhysicalEdgeData> | Edge<ProgramLoadEdgeData> | Edge<FrontendControlEdgeData>
+interface ReferenceEdgeData extends Record<string, unknown> {
+  relation: 'program' | 'qctl' | 'frontend' | 'relay' | 'interface'
+}
+
+type PhysicalGraphEdge = Edge<PhysicalEdgeData> | Edge<ProgramLoadEdgeData> | Edge<FrontendControlEdgeData> | Edge<ReferenceEdgeData>
 
 const RegionFrame = memo(({ data }: NodeProps<Node<PhysicalNodeData>>) => (
   <div className={`physical-region-frame region-${data.region?.id}`}>
@@ -115,7 +142,7 @@ const FunctionalNode = memo(({ data }: NodeProps<Node<PhysicalNodeData>>) => {
             <div className="program-load-command-row"><b>Command PC / Sequencer</b><i data-program-edge="dma-command">→</i><b>Instruction DMA / Program Read Engine</b></div>
           </div>
           <div className="program-load-boundary-link" title="The RTL exposes a generic command/response contract. No AXI or C2C adapter is instantiated."><span data-program-edge="external-read">Program Read Request →</span><b>GENERIC DMA BOUNDARY</b><span className="program-load-return-lane">← Program Response Beats</span><small>AXI / C2C adapter not modeled</small></div>
-          <small className="program-load-needs-review">BOUNDARY NEEDS REVIEW · lpu_top currently derives EAST/WEST Scope from Destination[11]; top-level BOTH input is not exposed.</small>
+          <small className="program-load-needs-review">BOUNDARY NEEDS REVIEW · lpu_top currently derives EAST/WEST Scope from Destination[12]; top-level BOTH input is not exposed.</small>
         </div></section>
         <div className="program-load-crossing command-to-reassembly" aria-label="Command and DMA to Instruction Reassembly interfaces">
           <span className="program-load-crossing-control" data-program-edge="image-context" title="Independent Scope[1:0], Destination[11:0], format, local iMEM base and image metadata">IMAGE CONTEXT + ROUTE METADATA <b>→</b></span>
@@ -129,7 +156,7 @@ const FunctionalNode = memo(({ data }: NodeProps<Node<PhysicalNodeData>>) => {
           <b className="program-load-word-fifo">Reassembled Word FIFO · 8</b>
         </div></section>
         <div className="program-load-crossing reassembly-to-handoff" aria-label="Instruction Reassembly to RTL Handoff interface">
-          <span className="program-load-crossing-data" data-program-edge="word-dequeue" title="164-bit stored record: 128-bit word, 4-bit strobe, 2-bit Scope, 12-bit Destination, 17-bit local iMEM address and last">REASSEMBLED WORD + ROUTE METADATA <b>→</b></span>
+          <span className="program-load-crossing-data" data-program-edge="word-dequeue" title="165-bit stored record: 128-bit word, 4-bit strobe, 2-bit Scope, 13-bit Destination, 17-bit local iMEM address and last">REASSEMBLED WORD + ROUTE METADATA <b>→</b></span>
           <span className="program-load-crossing-return">← DEQUEUE READY</span>
         </div>
         <section className="program-load-handoff"><header>RTL HANDOFF</header><div className="program-load-mini-graph program-load-merge">
@@ -168,6 +195,46 @@ const PhysicalFrontendMarker = memo(({ data }: NodeProps<Node<PhysicalNodeData>>
   </div>
 })
 PhysicalFrontendMarker.displayName = 'PhysicalFrontendMarker'
+
+const ReferenceTopologyNode = memo(({ data }: NodeProps<Node<PhysicalNodeData>>) => {
+  const item = data.topologyNode!
+  const interfaceItem = data.interfaceItem
+  return <div
+    className={`physical-reference-node tone-${item.tone} ${data.selected ? 'selected' : ''}`}
+    data-topology-label={item.label}
+    data-inset-placement={item.insetPlacement ?? 'center'}
+    data-storage={item.storageSpec ? 'true' : 'false'}
+    tabIndex={item.storageSpec ? 0 : undefined}
+    title={interfaceItem || item.storageSpec ? undefined : `${item.label}\n${item.note}`}
+  >
+    {item.tone !== 'note' && <DataHandles />}
+    {interfaceItem ? <InteractiveInterfaceLabel
+      className="physical-reference-interface-popover"
+      ariaLabel={`${item.label.replace('\n', ' ')}，悬浮预览，点击固定`}
+      semanticName={item.label.replace('\n', ' ')}
+      sourceName={data.interfaceSourceName ?? interfaceItem.sourceBlockId}
+      destinationName={data.interfaceDestinationName ?? interfaceItem.destinationBlockId}
+      rawConnections={data.interfaceRawConnections ?? []}
+      status={`${interfaceItem.evidenceStatus} · ${interfaceItem.pathKind}`}
+      onOpenDetail={() => data.onOpenInterface?.(interfaceItem.id)}
+    ><strong>{item.label}</strong></InteractiveInterfaceLabel> : <strong>{item.label}</strong>}
+    {item.insetLabel && <span className="physical-reference-node-inset">{item.insetLabel}</span>}
+    {item.caption && <small>{item.caption}</small>}
+    {item.storageSpec && <aside className="physical-storage-popover" role="tooltip">
+      <span className="physical-storage-popover-eyebrow">STORAGE PARAMETERS</span>
+      <strong>{item.storageSpec.title}</strong>
+      <dl>
+        <div><dt>WIDTH</dt><dd>{item.storageSpec.width}</dd></div>
+        <div><dt>DEPTH</dt><dd>{item.storageSpec.depth}</dd></div>
+        <div><dt>CONTENTS</dt><dd>{item.storageSpec.contents}</dd></div>
+        {item.storageSpec.extraFacts?.map((fact) => <div key={fact.label}><dt>{fact.label}</dt><dd>{fact.value}</dd></div>)}
+      </dl>
+      <p>{item.storageSpec.implementation}</p>
+      <small data-status={item.storageSpec.status}>{item.storageSpec.status} · current RTL</small>
+    </aside>}
+  </div>
+})
+ReferenceTopologyNode.displayName = 'ReferenceTopologyNode'
 
 interface FrontendLevelNodeData extends Record<string, unknown> {
   label: string
@@ -528,7 +595,7 @@ function PhysicalBusEdge({ id, sourceX, sourceY, targetX, targetY, markerEnd, da
   </>
 }
 
-const nodeTypes = { region: RegionFrame, functional: FunctionalNode, frontendMarker: PhysicalFrontendMarker, programGroup: PromotedProgramGroup, programStage: PromotedProgramNode }
+const nodeTypes = { region: RegionFrame, functional: FunctionalNode, frontendMarker: PhysicalFrontendMarker, programGroup: PromotedProgramGroup, programStage: PromotedProgramNode, referenceTopology: ReferenceTopologyNode }
 const edgeTypes = { physical: PhysicalBusEdge, programLoad: ProgramLoadEdge }
 
 const regionLayout: Record<string, { x: number; y: number; width: number; height: number }> = {
@@ -604,6 +671,193 @@ export default function PhysicalArchitectureGraph({ regions, blocks, interfaces,
     return () => { window.removeEventListener('resize', fit); window.clearTimeout(timer) }
   }, [])
   const model = useMemo(() => {
+    if (!connectivityMode) {
+      const programBlock = blocks.find((block) => block.id === 'physical:control:program-load')
+      const qctlBlock = blocks.find((block) => block.id === 'physical:control:qctl')
+      const blockById = new Map(blocks.map((block) => [block.id, block]))
+      const rawConnectionById = new Map(rawConnections.map((item) => [item.id, item]))
+      const frontendByFu = new Map<string, ConfigurationFrontend>(frontends.map((frontend) => [frontend.fu, frontend]))
+      const programNodeBySuffix = (suffix: string) => drillNodes.find((node) => node.id === `arch:control:program-load:${suffix}`)
+      const nodes: Node<PhysicalNodeData>[] = []
+      const edges: Edge<ReferenceEdgeData>[] = []
+      const node = ({ id, label, x, y, width, height, tone = 'module', note, insetLabel, insetPlacement = 'center', caption, storageSpec, disableDrilldown = false, block, programNode, frontend, interfaceItem, selected = false, selectable = true }: {
+        id: string
+        label: string
+        x: number
+        y: number
+        width: number
+        height: number
+        tone?: NonNullable<PhysicalNodeData['topologyNode']>['tone']
+        note: string
+        insetLabel?: string
+        insetPlacement?: 'center' | 'lower-left'
+        caption?: string
+        storageSpec?: NonNullable<PhysicalNodeData['topologyNode']>['storageSpec']
+        disableDrilldown?: boolean
+        block?: PhysicalFunctionalBlock
+        programNode?: ArchitectureDrillNode
+        frontend?: ConfigurationFrontend
+        interfaceItem?: PhysicalInterface
+        selected?: boolean
+        selectable?: boolean
+      }) => nodes.push({
+        id,
+        type: 'referenceTopology',
+        position: { x, y },
+        style: { width, height, zIndex: tone === 'note' ? 2 : 10 },
+        draggable: false,
+        selectable,
+        data: {
+          topologyNode: { label, tone, note, insetLabel, insetPlacement, caption, storageSpec, disableDrilldown },
+          block,
+          programNode,
+          programGroup: undefined,
+          ownerBlock: programBlock,
+          frontend,
+          interfaceItem,
+          interfaceSourceName: interfaceItem ? blockById.get(interfaceItem.sourceBlockId)?.displayName ?? interfaceItem.sourceBlockId : undefined,
+          interfaceDestinationName: interfaceItem ? blockById.get(interfaceItem.destinationBlockId)?.displayName ?? interfaceItem.destinationBlockId : undefined,
+          interfaceRawConnections: interfaceItem ? interfaceItem.rawConnectionIds.map((rawId) => rawConnectionById.get(rawId)).filter(Boolean) as RawConnection[] : undefined,
+          onOpenInterface: onSelectInterface,
+          selected,
+          rawHighlighted: false,
+        },
+      })
+      const edge = ({ id, source, target, relation, sourceHandle = 'right-source', targetHandle = 'left-target', arrow = true, dashed = false, type = 'straight' }: {
+        id: string
+        source: string
+        target: string
+        relation: ReferenceEdgeData['relation']
+        sourceHandle?: string
+        targetHandle?: string
+        arrow?: boolean
+        dashed?: boolean
+        type?: 'straight' | 'smoothstep'
+      }) => edges.push({
+        id,
+        source,
+        target,
+        sourceHandle,
+        targetHandle,
+        type,
+        className: `physical-reference-edge relation-${relation}`,
+        style: { stroke: ENGINEERING_NAVY, strokeWidth: 3, strokeDasharray: dashed ? '10 7' : undefined },
+        markerEnd: arrow ? { type: MarkerType.ArrowClosed, width: 15, height: 11, color: ENGINEERING_NAVY } : undefined,
+        data: { relation },
+        zIndex: relation === 'interface' ? 3 : 4,
+      })
+      const selectedBlock = (id: string) => selectedBlockId === id
+      const selectedInterface = (item?: PhysicalInterface) => item?.id === selectedInterfaceId
+      const programClickNode = programNodeBySuffix('instruction-dma')
+
+      // Fixed reference blueprint. These are explicit coordinates, not an auto layout.
+      node({ id: 'reference:ddr', label: 'DDR', x: 650, y: 65, width: 125, height: 78, note: 'External instruction-memory boundary. The current RTL exposes a generic Program DMA interface; a DDR controller is not instantiated.', storageSpec: { title: 'External Instruction DDR', width: 'Needs Review', depth: 'Needs Review', contents: 'Program-image bytes', implementation: 'External integration endpoint only; no DDR controller, PHY or memory array is instantiated in the current RTL.', status: 'needs-review' }, block: blockById.get('physical:external:instruction-ddr'), selected: selectedBlock('physical:external:instruction-ddr') })
+      node({ id: 'reference:axi', label: 'AXI', x: 970, y: 65, width: 125, height: 78, note: 'Conceptual AXI transport boundary. Current RTL does not instantiate an AXI adapter, so this remains Needs Review.', block: blockById.get('physical:external:program-bus'), selected: selectedBlock('physical:external:program-bus') })
+      node({ id: 'reference:boot-rom', label: 'BOOT ROM', x: 703, y: 190, width: 145, height: 86, tone: 'boot', note: 'Conceptual boot source from the reference architecture. No BOOT ROM module was found in the current RTL snapshot.', storageSpec: { title: 'BOOT ROM', width: 'Needs Review', depth: 'Needs Review', contents: 'Boot / initial program image', implementation: 'Reference-architecture placeholder; no BOOT ROM module or array parameters were found in the current RTL.', status: 'needs-review' }, disableDrilldown: true })
+      node({ id: 'reference:controller', label: 'Controller', x: 685, y: 322, width: 180, height: 96, note: 'Program Load controller and command-sequencing responsibility.', storageSpec: { title: 'Command Descriptor Array', width: '155-bit record', depth: '32 entries', contents: 'Opcode, source address, byte count, route, format and jump metadata', implementation: 'Register array command_mem_q in lpu_program_load_controller.', status: 'rtl-confirmed' }, disableDrilldown: true, programNode: programClickNode, selected: selectedBlock('physical:control:program-load') })
+      node({ id: 'reference:dma', label: 'DMA', x: 970, y: 280, width: 285, height: 180, note: 'lpu_instruction_dma: generic Program DMA request/response engine with ordered ID tracking and a buffered response path.', insetLabel: 'Outstanding FIFO', insetPlacement: 'lower-left', storageSpec: { title: 'Outstanding ID FIFO', width: '8-bit DMA ID', depth: '16 entries', contents: 'Accepted read-request IDs in response order', implementation: 'u_outstanding_id_fifo inside lpu_instruction_dma.', status: 'rtl-confirmed', extraFacts: [{ label: 'DMA DATA', value: '256 bit' }] }, disableDrilldown: true, programNode: programClickNode, selected: selectedBlock('physical:control:program-load') || selectedBlock('physical:control:instruction-dma') })
+      node({ id: 'reference:response-fifo', label: 'Response FIFO', x: 1335, y: 330, width: 145, height: 84, tone: 'buffer', note: 'Response FIFO inside lpu_instruction_dma; buffers generic Program DMA response beats.', storageSpec: { title: 'DMA Response FIFO', width: '298-bit record', depth: '16 entries', contents: '256-bit data + 32-bit keep + 8-bit ID + last + error', implementation: 'u_response_fifo inside lpu_instruction_dma.', status: 'rtl-confirmed' }, disableDrilldown: true, programNode: programNodeBySuffix('response') })
+      node({ id: 'reference:config-fifo', label: 'Config FIFO', x: 1080, y: 515, width: 145, height: 82, tone: 'buffer', note: 'Image-context/configuration FIFO in lpu_program_load_path.', storageSpec: { title: 'Image Context / Config FIFO', width: '155-bit record', depth: '16 entries', contents: 'DMA transaction descriptor and Program route metadata', implementation: 'u_config_fifo in lpu_program_load_path.', status: 'rtl-confirmed' }, disableDrilldown: true, programNode: programNodeBySuffix('assembler') })
+      node({ id: 'reference:reassembler', label: 'Reassembler', x: 1520, y: 510, width: 180, height: 92, note: 'lpu_program_load_reassembler converts buffered response bytes plus image context into complete Program Words.', storageSpec: { title: 'Reassembly Byte Reservoir', width: '512 bit', depth: '64 bytes', contents: 'Buffered DMA response bytes before 96/128-bit word emission', implementation: 'buffer_q with BUFFER_BYTES = 64 in lpu_program_load_reassembler.', status: 'rtl-confirmed' }, disableDrilldown: true, programNode: programNodeBySuffix('assembler') })
+      node({ id: 'reference:word-fifo', label: 'Word FIFO', x: 1795, y: 510, width: 145, height: 92, tone: 'buffer', note: 'Eight-entry reassembled Program Word FIFO.', storageSpec: { title: 'Reassembled Program Word FIFO', width: '165-bit record', depth: '8 entries', contents: '128-bit word + strobe + Scope + 13-bit Destination + iMEM address + last', implementation: 'u_word_fifo in lpu_program_load_path.', status: 'rtl-confirmed' }, disableDrilldown: true, programNode: programNodeBySuffix('word-fifo') })
+
+      node({ id: 'reference:event-buffer', label: 'EVENT BUFFER', x: 520, y: 650, width: 210, height: 96, note: 'Eight-slot, 32-bit TAG event buffer in the QCTL global subsystem.', storageSpec: { title: 'QCTL Event Buffer', width: '32-bit TAG + 228-bit pending mask', depth: '8 events', contents: 'Ordered event TAG and per-endpoint pending-consumer mask', implementation: 'event_tag_q and event_pending_q arrays in lpu_qctl_event_buffer.', status: 'rtl-confirmed' }, block: qctlBlock, selected: selectedBlock('physical:control:qctl') })
+      node({ id: 'reference:qctl-pool', label: 'POOL', x: 805, y: 650, width: 155, height: 96, note: 'Logical QCTL queue address space. Physical record storage is distributed across independent East/West QCTL Relay instances.', storageSpec: { title: 'QCTL Distributed Record Pool', width: '96-bit record', depth: '14 × 64 = 896 records', contents: 'Records partitioned across 228 logical endpoint queues', implementation: 'No centralized Pool array: fourteen QCTL Relay regional stores provide the physical capacity.', status: 'rtl-confirmed', extraFacts: [{ label: 'QUEUE LIMIT', value: '16 records / logical queue' }] }, block: qctlBlock, selected: selectedBlock('physical:control:qctl') })
+      node({ id: 'reference:qctl-manager', label: 'QCTL\nLoad Manager', x: 610, y: 810, width: 250, height: 128, note: 'lpu_qctl_load_manager creates partition and record packets for the two independent QCTL Relay chains.', block: qctlBlock, selected: selectedBlock('physical:control:qctl') })
+      node({ id: 'reference:distributor', label: 'Distributor', x: 1110, y: 810, width: 285, height: 128, note: 'Program Distributor: input elastic stage, Scope fanout and East/West Program Distribution branches.', disableDrilldown: true, programNode: programNodeBySuffix('elastic'), selected: selectedBlock('physical:control:program-load') })
+
+      node({ id: 'reference:relay-note', label: 'Relay 拓扑示意：Program Distribution 与 QCTL 分别使用独立的 Relay 网络', x: 1510, y: 965, width: 880, height: 42, tone: 'note', note: 'One visual row expresses the common topology only. Program Distribution and QCTL instantiate separate East/West seven-stage Relay networks. The central Elastic Stage belongs only to Program Distribution.', selectable: false })
+      const relayIds: string[] = []
+      for (let relayIndex = 0; relayIndex < 13; relayIndex += 1) {
+        const id = relayIndex === 6 ? 'reference:elastic-stage' : `reference:relay-${relayIndex}`
+        relayIds.push(id)
+        node({
+          id,
+          label: relayIndex === 6 ? 'Elastic\nStage' : 'Relay',
+          x: 65 + relayIndex * 185,
+          y: 1040,
+          width: 130,
+          height: 82,
+          tone: 'relay',
+          note: relayIndex === 6
+            ? 'Two-entry Program Distribution input elastic stage. This node is not part of the QCTL Relay Chain.'
+            : 'Common Relay topology marker. Program Distribution and QCTL use distinct physical instances; open the corresponding Inspector for RTL-specific counts and connectivity.',
+          storageSpec: relayIndex === 6
+            ? { title: 'Program Distributor Elastic Stage', width: '165-bit record', depth: '2 entries', contents: 'Program Load record and route metadata', implementation: 'u_elastic_fifo in lpu_program_distribute_elastic_stage; it is not part of QCTL.', status: 'rtl-confirmed' }
+            : { title: 'Independent Relay Storage', width: 'Program 165 bit · QCTL 96 bit', depth: 'Program 2 entries · QCTL 64 records + 2 transit', contents: 'Program Load records / QCTL regional records', implementation: 'The single drawn row represents two independent Relay networks with the same topology, not shared storage instances.', status: 'rtl-confirmed', extraFacts: [{ label: 'INSTANCES', value: '7 per hemisphere per network' }] },
+          disableDrilldown: true,
+          programNode: relayIndex === 6 ? programNodeBySuffix('elastic') : programNodeBySuffix('relay-fabric'),
+          selected: selectedBlock('physical:control:program-load'),
+        })
+      }
+
+      const fuSpecs = [
+        { blockId: 'physical:west:mxm', fu: 'mxm', label: 'MXM' },
+        { blockId: 'physical:west:sxm', fu: 'sxm', label: 'SXM' },
+        { blockId: 'physical:west:mem', fu: 'mem', label: 'MEM' },
+        { blockId: 'physical:central:vxm', fu: 'vxm', label: 'VXM' },
+        { blockId: 'physical:east:mem', fu: 'mem', label: 'MEM' },
+        { blockId: 'physical:east:sxm', fu: 'sxm', label: 'SXM' },
+        { blockId: 'physical:east:mxm', fu: 'mxm', label: 'MXM' },
+      ] as const
+      fuSpecs.forEach((spec, index) => {
+        const centerX = 190 + index * 350
+        const block = blockById.get(spec.blockId)
+        const frontend = frontendByFu.get(spec.fu)
+        node({ id: `reference:frontend-${index}`, label: 'Frontend', x: centerX - 85, y: 1255, width: 170, height: 76, note: `${spec.label} FU-local frontend. Click to open the FU-specific interactive frontend level.`, frontend })
+        node({ id: spec.blockId, label: spec.label, x: centerX - 95, y: 1443, width: 190, height: 124, note: block?.function ?? `${spec.label} functional unit`, block, selected: selectedBlock(spec.blockId) })
+      })
+
+      const interfaceSpecs = [
+        { left: 'physical:west:mxm', right: 'physical:west:sxm', label: 'MXM-SXM\nInterface' },
+        { left: 'physical:west:sxm', right: 'physical:west:mem', label: 'SXM-MEM\nInterface' },
+        { left: 'physical:west:mem', right: 'physical:central:vxm', label: 'MEM-VXM\nInterface' },
+        { left: 'physical:central:vxm', right: 'physical:east:mem', label: 'VXM-MEM\nInterface' },
+        { left: 'physical:east:mem', right: 'physical:east:sxm', label: 'MEM-SXM\nInterface' },
+        { left: 'physical:east:sxm', right: 'physical:east:mxm', label: 'SXM-MXM\nInterface' },
+      ]
+      const pairInterface = (left: string, right: string) => interfaces.find((item) => item.plane === 'data' && ((item.sourceBlockId === left && item.destinationBlockId === right) || (item.sourceBlockId === right && item.destinationBlockId === left)))
+      interfaceSpecs.forEach((spec, index) => {
+        const item = pairInterface(spec.left, spec.right)
+        node({ id: `reference:fu-interface-${index}`, label: spec.label, x: 295 + index * 350, y: 1463, width: 140, height: 84, tone: 'interface', note: item?.classificationBasis ?? `${spec.label.replace('\n', ' ')} semantic interface`, interfaceItem: item, selected: selectedInterface(item) })
+      })
+
+      edge({ id: 'reference-edge:ddr-axi', source: 'reference:ddr', target: 'reference:axi', relation: 'program' })
+      edge({ id: 'reference-edge:axi-dma', source: 'reference:axi', target: 'reference:dma', relation: 'program', sourceHandle: 'bottom-source', targetHandle: 'top-target', type: 'smoothstep' })
+      edge({ id: 'reference-edge:boot-controller', source: 'reference:boot-rom', target: 'reference:controller', relation: 'program', sourceHandle: 'bottom-source', targetHandle: 'top-target' })
+      edge({ id: 'reference-edge:controller-dma', source: 'reference:controller', target: 'reference:dma', relation: 'program' })
+      edge({ id: 'reference-edge:dma-response', source: 'reference:dma', target: 'reference:response-fifo', relation: 'program' })
+      edge({ id: 'reference-edge:controller-config', source: 'reference:controller', target: 'reference:config-fifo', relation: 'program', sourceHandle: 'bottom-source', targetHandle: 'left-target', type: 'smoothstep' })
+      edge({ id: 'reference-edge:response-reassembler', source: 'reference:response-fifo', target: 'reference:reassembler', relation: 'program', sourceHandle: 'bottom-source', targetHandle: 'left-target', type: 'smoothstep' })
+      edge({ id: 'reference-edge:config-reassembler', source: 'reference:config-fifo', target: 'reference:reassembler', relation: 'program' })
+      edge({ id: 'reference-edge:reassembler-word', source: 'reference:reassembler', target: 'reference:word-fifo', relation: 'program' })
+      edge({ id: 'reference-edge:word-distributor', source: 'reference:word-fifo', target: 'reference:distributor', relation: 'program', sourceHandle: 'bottom-source', targetHandle: 'top-target', type: 'smoothstep' })
+      edge({ id: 'reference-edge:event-qctl', source: 'reference:event-buffer', target: 'reference:qctl-manager', relation: 'qctl', sourceHandle: 'bottom-source', targetHandle: 'top-target', type: 'smoothstep' })
+      edge({ id: 'reference-edge:pool-qctl', source: 'reference:qctl-pool', target: 'reference:qctl-manager', relation: 'qctl', sourceHandle: 'bottom-source', targetHandle: 'top-target', type: 'smoothstep' })
+      edge({ id: 'reference-edge:distributor-elastic', source: 'reference:distributor', target: relayIds[6], relation: 'program', sourceHandle: 'bottom-source', targetHandle: 'top-target', type: 'smoothstep' })
+      edge({ id: 'reference-edge:qctl-west-relay', source: 'reference:qctl-manager', target: relayIds[5], relation: 'qctl', sourceHandle: 'bottom-source', targetHandle: 'top-target', type: 'smoothstep' })
+      edge({ id: 'reference-edge:qctl-east-relay', source: 'reference:qctl-manager', target: relayIds[7], relation: 'qctl', sourceHandle: 'bottom-source', targetHandle: 'top-target', type: 'smoothstep' })
+      for (let relayIndex = 5; relayIndex > 0; relayIndex -= 1) edge({ id: `reference-edge:west-relay-${relayIndex}`, source: relayIds[relayIndex], target: relayIds[relayIndex - 1], relation: 'relay' })
+      edge({ id: 'reference-edge:elastic-west', source: relayIds[6], target: relayIds[5], relation: 'relay', sourceHandle: 'left-source', targetHandle: 'right-target' })
+      edge({ id: 'reference-edge:elastic-east', source: relayIds[6], target: relayIds[7], relation: 'relay' })
+      for (let relayIndex = 7; relayIndex < 12; relayIndex += 1) edge({ id: `reference-edge:east-relay-${relayIndex}`, source: relayIds[relayIndex], target: relayIds[relayIndex + 1], relation: 'relay' })
+      const relayTapIndices = [0, 2, 4, 6, 8, 10, 12]
+      relayTapIndices.forEach((relayIndex, fuIndex) => edge({ id: `reference-edge:relay-frontend-${fuIndex}`, source: relayIds[relayIndex], target: `reference:frontend-${fuIndex}`, relation: 'frontend', sourceHandle: 'bottom-source', targetHandle: 'top-target', type: 'smoothstep' }))
+      fuSpecs.forEach((spec, index) => edge({ id: `reference-edge:frontend-fu-${index}`, source: `reference:frontend-${index}`, target: spec.blockId, relation: 'frontend', sourceHandle: 'bottom-source', targetHandle: 'top-target', type: 'smoothstep' }))
+      interfaceSpecs.forEach((spec, index) => {
+        edge({ id: `reference-edge:fu-interface-left-${index}`, source: spec.left, target: `reference:fu-interface-${index}`, relation: 'interface', arrow: false })
+        edge({ id: `reference-edge:fu-interface-right-${index}`, source: `reference:fu-interface-${index}`, target: spec.right, relation: 'interface', arrow: false })
+      })
+
+      const query = signalQuery.trim().toLowerCase()
+      if (query) for (const item of nodes) {
+        const content = `${item.data.topologyNode?.label ?? ''} ${item.data.topologyNode?.note ?? ''}`.toLowerCase()
+        item.style = { ...item.style, opacity: content.includes(query) ? 1 : 0.24 }
+      }
+      const visibleEdges = edges.filter((item) => planeFilter === 'all' || (planeFilter === 'data' ? item.data?.relation === 'interface' : item.data?.relation !== 'interface'))
+      return { nodes, edges: visibleEdges }
+    }
+
     const programBlockId = 'physical:control:program-load'
     const programRootId = 'arch:control:program-load'
     const programBlock = blocks.find((block) => block.id === programBlockId)
@@ -911,15 +1165,22 @@ export default function PhysicalArchitectureGraph({ regions, blocks, interfaces,
   const activeFrontend = activeFrontendId == null ? null : frontends.find((frontend) => frontend.id === activeFrontendId) ?? null
   if (activeFrontend) return <FrontendArchitectureLevel frontend={activeFrontend} onBack={() => setActiveFrontendId(null)} onFocusModeChange={onFocusModeChange} />
 
-  return <ReactFlow
+  return <ReactFlow<Node<PhysicalNodeData>, PhysicalGraphEdge>
     key={`${planeFilter}:${connectivityMode}`}
     nodes={model.nodes}
-    edges={model.edges}
+    edges={model.edges as PhysicalGraphEdge[]}
     nodeTypes={nodeTypes}
     edgeTypes={edgeTypes}
     nodesDraggable={false}
     nodesConnectable={false}
-    onNodeClick={(_, node) => { const data = node.data as PhysicalNodeData; if (data.frontend) setActiveFrontendId(data.frontend.id); else if (data.programNode || data.programGroup) onOpenBlock('physical:control:program-load'); else if (data.block) onOpenBlock(node.id) }}
+    onNodeClick={(_, node) => {
+      const data = node.data as PhysicalNodeData
+      if (data.frontend) setActiveFrontendId(data.frontend.id)
+      else if (data.interfaceItem) onSelectInterface(data.interfaceItem.id)
+      else if (data.topologyNode?.disableDrilldown) return
+      else if (data.programNode || data.programGroup) onOpenBlock('physical:control:program-load')
+      else if (data.block) onOpenBlock(data.block.id)
+    }}
     onEdgeClick={(_, edge) => { if (edge.type === 'programLoad') onSelectDrillInterface(edge.id); else if (edge.type === 'physical') onSelectInterface(edge.id) }}
     minZoom={0.25}
     maxZoom={1.8}
@@ -927,7 +1188,7 @@ export default function PhysicalArchitectureGraph({ regions, blocks, interfaces,
     fitViewOptions={fitOptions}
     onInit={(instance) => { flowRef.current = instance }}
     proOptions={{ hideAttribution: true }}
-    className="engineering-graph physical-engineering-graph"
+    className={`engineering-graph physical-engineering-graph ${connectivityMode ? '' : 'physical-reference-topology'}`}
     colorMode="light"
   >
     <Background color="#cbd4e1" gap={28} size={1} />
